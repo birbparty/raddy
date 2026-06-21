@@ -15,9 +15,20 @@ requires "nim >= 2.0.0"
 # submodule-relative imports in src/raddy/*.nim (same pitfall as clckr/baggie).
 
 task test, "Run the test suite":
+  let home = getEnv("HOME")
+  let (bddyRaw, bddyCode) = gorgeEx(
+    "find " & home & "/.nimble/pkgs2 -maxdepth 1 -name 'bddy-*' -type d")
+  let bddyDirs = bddyRaw.strip().splitLines()
+  if bddyCode != 0 or bddyDirs.len == 0 or bddyDirs[0].len == 0:
+    quit "raddy test: bddy not found in ~/.nimble/pkgs2 — run: nimble install bddy"
+  if bddyDirs.len > 1:
+    echo "raddy test: WARNING multiple bddy-* dirs found, using " & bddyDirs[0]
+  let bddyDir = bddyDirs[0]
+  let flags = "--mm:orc --hints:off --path:src --path:" & bddyDir
+  # Tests live flat in tests/ (no subdirectories); listFiles is non-recursive by design.
   for f in listFiles("tests"):
-    if f.endsWith(".nim") and f.contains("/test_"):
-      exec "nim c --mm:orc --hints:off --path:src -r " & f
+    if f.endsWith(".nim") and f.contains("test_"):
+      exec "nim c " & flags & " -r " & f
 
 task check, "Type-check library entry point":
   exec "nim check --mm:orc --hints:off --path:src src/raddy.nim"

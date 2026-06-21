@@ -2,6 +2,13 @@ nimcache/
 nimblecache/
 htmldocs/
 
+# Compiled test/example binaries (from `nim c -r`)
+tests/test_*
+!tests/test_*.nim
+!tests/test_*.nims
+examples/*
+!examples/*.nim
+
 # Beads / Dolt files (added by bd init)
 .dolt/
 *.db
