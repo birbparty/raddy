@@ -1,5 +1,4 @@
-## Smoke spec: raddy entry point compiles and is importable.
-## Grows as submodules are added.
+## Smoke spec: raddy entry point compiles and re-exports types.
 
 import bddy
 import raddy
@@ -8,4 +7,20 @@ import raddy
 spec "raddy entry point":
   it "compiles and is importable":
     verify:
-      true  # compilation reaching this line is the test; expand as submodules land
+      true  # reaching this line proves compilation succeeds
+
+  it "re-exports nk_bool as a 1-byte bool":
+    verify:
+      sizeof(nk_bool) == 1
+
+  it "re-exports NK_COMMAND_* enum with correct count":
+    verify:
+      NK_COMMAND_CUSTOM.ord == 18
+
+  it "re-exports NK_KEY_MAX sentinel":
+    verify:
+      NK_KEY_MAX.ord == 43
+
+  it "re-exports NK_BUTTON_MAX sentinel":
+    verify:
+      NK_BUTTON_MAX.ord == 6  ## X1=4, X2=5, MAX=6 — verified against nuklear.h
