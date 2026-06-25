@@ -162,6 +162,18 @@ if [[ -n "$PURITY_VIOLATIONS" || -n "$BACKEND_VIOLATIONS" ]]; then
 fi
 echo "    core purity: OK (no naylib/raylib_console/inputty/backend imports in core)"
 
+echo "==> verify: compile-check examples/demo.nim (desktop)"
+NAYLIB_DIR_DEMO=$(find "$HOME/.nimble/pkgs2" -maxdepth 1 -name 'naylib-*' -type d | head -1)
+if [[ -n "$NAYLIB_DIR_DEMO" ]]; then
+  nim c --compileOnly --mm:orc --hints:off --path:src \
+    --path:"$NAYLIB_DIR_DEMO" \
+    --passC:"-I${NAYLIB_DIR_DEMO}/raylib" \
+    examples/demo.nim
+  echo "    examples/demo.nim: OK"
+else
+  echo "    WARNING: naylib not found — skipping examples/demo.nim compile check"
+fi
+
 echo "==> verify: nimble test"
 nimble test
 
