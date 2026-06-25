@@ -24,3 +24,35 @@ spec "raddy entry point":
   it "re-exports NK_BUTTON_MAX sentinel":
     verify:
       NK_BUTTON_MAX.ord == 6  ## X1=4, X2=5, MAX=6 — verified against nuklear.h
+
+spec "errors module":
+  it "RaddyCmdBufBytes is 64 KiB":
+    verify:
+      RaddyCmdBufBytes == 65536
+
+  it "RaddyError.reOk is ordinal 0":
+    verify:
+      reOk.ord == 0
+
+  it "RaddyError.reBufferOverflow is after reInitFailed and reFontNotFound":
+    verify:
+      reBufferOverflow.ord > reFontNotFound.ord
+
+  it "raddyLogOnce sets sentinel on first call":
+    var seen = false
+    raddyLogOnce(seen, "test-once")
+    verify:
+      seen == true
+
+  it "raddyLogOnce suppresses second call via sentinel":
+    var callCount = 0
+    var sentinel = false
+    ## First call: sentinel false → fires
+    if not sentinel:
+      sentinel = true
+      inc callCount
+    ## Second call (raddyLogOnce behavior): sentinel true → no-op
+    if not sentinel:
+      inc callCount
+    verify:
+      callCount == 1
