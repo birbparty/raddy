@@ -37,10 +37,10 @@ const nkH = "nuklear.h"
 # ---------------------------------------------------------------------------
 
 proc nkBegin(ctx: ptr nk_context): ptr nk_command
-    {.importc: "nk__begin", header: nkH.}
+    {.importc: "nk__begin", header: nkH, sideEffect.}
 
 proc nkNext(ctx: ptr nk_context; cmd: ptr nk_command): ptr nk_command
-    {.importc: "nk__next", header: nkH.}
+    {.importc: "nk__next", header: nkH, sideEffect.}
 
 proc nkClear(ctx: ptr nk_context)
     {.importc: "nk_clear", header: nkH, sideEffect.}
@@ -50,7 +50,17 @@ proc nkClear(ctx: ptr nk_context)
 # ---------------------------------------------------------------------------
 
 const nkCmdCount = ord(NK_COMMAND_CUSTOM) + 1  ## 19 total command types
+static: doAssert ord(NK_COMMAND_CUSTOM) == 18, "NkCommandType layout changed — update nkCmdCount"
+
+## noopWarned is process-global (not per-context). The warn-once policy is intentional:
+## once a type has logged it is silenced for the process lifetime, including after a
+## context teardown+reinit. This is correct for a debug aid. THREADING: raddyRender
+## is single-threaded by design (Nuklear's context itself is not thread-safe); do NOT
+## call raddyRender from multiple threads without external synchronization.
 var noopWarned {.global.}: array[nkCmdCount, bool]
+
+## One-per-process truncation sentinel for NK_COMMAND_TEXT oversize payloads.
+var textTruncWarnEmitted {.global.} = false
 
 # ---------------------------------------------------------------------------
 # raddyRender
@@ -61,14 +71,19 @@ proc raddyRender*(ctx: ptr nk_context; framebufferH: int32;
   ## Drain the Nuklear command queue and dispatch draw calls to raylib.
   ##
   ## ctx:         pointer to the nk_context (from raddyBundleCtx or raddyCtxInit).
-  ## framebufferH: height of the current render target in pixels.
-  ##              Pass RenderTexture.texture.height inside BeginTextureMode,
-  ##              or GetScreenHeight() when rendering directly to the screen.
-  ##              Required for NK_COMMAND_SCISSOR Y-flip.
+  ## framebufferH: height of the RenderTexture being rendered into, in pixels.
+  ##              Pass RenderTexture.texture.height (inside BeginTextureMode).
+  ##              NK_COMMAND_SCISSOR applies a Y-flip (y' = framebufferH - y - h)
+  ##              because raylib FBOs use bottom-up OpenGL coordinates. Direct-to-
+  ##              screen rendering (GetScreenHeight()) does NOT need the flip and
+  ##              is not supported by this function — use a RenderTexture.
   ## bufOverflow: set true if the Nuklear command buffer overflowed this frame
   ##              (vita/raddyFixed path only). Commands were dropped when true.
+  ##              Text longer than RaddyMaxTextBytes (1024) per NK_COMMAND_TEXT is
+  ##              silently truncated to RaddyMaxTextBytes-1 bytes (logged once).
   ##
   ## Calls nk_clear on exit. Do NOT also call raddyBundleClear the same frame.
+  assert framebufferH > 0, "raddyRender: framebufferH must be > 0 (pass RenderTexture.texture.height)"
   var scissorActive = false
 
   var cmd = nkBegin(ctx)
@@ -104,6 +119,8 @@ proc raddyRender*(ctx: ptr nk_context; framebufferH: int32;
       if rc.rounding == 0:
         rDrawRectangleLinesEx(r, rc.line_thickness.float32, toRColor(rc.color))
       elif rc.w > 0 and rc.h > 0:
+        ## The w>0/h>0 guard protects rectRoundness's divisor; geom.nim guards it
+        ## too, so a zero-extent rounded rect would be a safe no-op either way.
         rDrawRectangleRoundedLinesEx(
           r,
           rectRoundness(rc.rounding.float32, rc.w.float32, rc.h.float32),
@@ -119,6 +136,7 @@ proc raddyRender*(ctx: ptr nk_context; framebufferH: int32;
       if rf.rounding == 0:
         rDrawRectangleRec(r, toRColor(rf.color))
       elif rf.w > 0 and rf.h > 0:
+        ## Same w>0/h>0 guard as RECT; see comment there.
         rDrawRectangleRounded(
           r,
           rectRoundness(rf.rounding.float32, rf.w.float32, rf.h.float32),
@@ -136,9 +154,15 @@ proc raddyRender*(ctx: ptr nk_context; framebufferH: int32;
         ## Stack buffer: NK text is NOT null-terminated (length is byte count).
         ## NEVER construct a Nim string from tc.`string` — `$ptr` reads past valid
         ## memory. copyMem + null-terminate is the only safe pattern.
-        const MaxTextBytes = 1024
-        var buf: array[MaxTextBytes, char]
-        let copyLen = min(int(tc.length), MaxTextBytes - 1)
+        ## Cap: RaddyMaxTextBytes-1 usable chars; see font.nim for the shared constant.
+        ## UTF-8 note: truncation at an arbitrary byte can split a multi-byte codepoint;
+        ## this is acceptable for the first-pass renderer — fix in the i18n follow-up.
+        var buf: array[RaddyMaxTextBytes, char]
+        let copyLen = min(int(tc.length), RaddyMaxTextBytes - 1)
+        if copyLen < int(tc.length) and not textTruncWarnEmitted:
+          textTruncWarnEmitted = true
+          raddyLog("raddyRender: NK_COMMAND_TEXT payload truncated to " &
+                   $RaddyMaxTextBytes & " bytes (silenced hereafter)")
         copyMem(addr buf[0], addr tc.`string`[0], copyLen)
         buf[copyLen] = '\0'
         rDrawTextEx(
@@ -156,6 +180,10 @@ proc raddyRender*(ctx: ptr nk_context; framebufferH: int32;
       ## Unimplemented command type — log once, then silence.
       ## Remaining shape handlers land in the render-shapes follow-up iteration.
       let cmdOrd = ord(cmd.`type`)
+      ## cmdOrd < nkCmdCount is a version-skew guard: NkCommandType is sized to
+      ## cint, so a newer Nuklear with extra values would still parse here as a
+      ## valid enum value but with an ordinal outside our known range. This guard
+      ## keeps the array access safe; tripping it means types.nim/Nuklear diverged.
       if cmdOrd < nkCmdCount and not noopWarned[cmdOrd]:
         noopWarned[cmdOrd] = true
         raddyLog("raddyRender: " & $cmd.`type` & " no-op — not yet implemented (silenced)")
@@ -168,6 +196,10 @@ proc raddyRender*(ctx: ptr nk_context; framebufferH: int32;
 
   ## Overflow check: on vita/raddyFixed, `needed > size` means commands were dropped.
   ## Must happen BEFORE nk_clear (which resets the buffer pointers).
+  ## Predicate is `needed > size` (NOT `needed > allocated`): on NK_BUFFER_FIXED,
+  ## nk_buffer_alloc increments `needed` before the capacity check, so `needed`
+  ## accumulates total requested bytes while `allocated` stalls below `size` when
+  ## the buffer is full. See types.nim nk_buffer comment for the full explanation.
   when defined(vita) or defined(raddyFixed):
     bufOverflow = ctx.memory.needed > ctx.memory.size
     if bufOverflow:

@@ -55,10 +55,22 @@ echo "==> verify: compile-only check src/raddy/context.nim (desktop + vita)"
 nim c --compileOnly --mm:orc --hints:off --path:src src/raddy/context.nim
 nim c --compileOnly --mm:arc --hints:off --path:src -d:vita src/raddy/context.nim
 
+BDDY_DIR="$(find "$HOME/.nimble/pkgs2" -maxdepth 1 -name 'bddy-*' -type d | head -1)"
+
 echo "==> verify: test_context with -d:raddyFixed (exercises overflow detection)"
 nim c --mm:orc --hints:off --path:src -d:raddyFixed \
-  --path:"$(find "$HOME/.nimble/pkgs2" -maxdepth 1 -name 'bddy-*' -type d | head -1)" \
+  --path:"$BDDY_DIR" \
   -r tests/test_context.nim
+
+echo "==> verify: test_render with -d:raddyFixed (exercises render overflow branch)"
+NAYLIB_PASSC=""
+if [[ -n "${NAYLIB_DIR:-}" ]]; then
+  NAYLIB_PASSC="--passC:-I${NAYLIB_DIR}/raylib"
+fi
+nim c --mm:orc --hints:off --path:src -d:raddyFixed \
+  --path:"$BDDY_DIR" \
+  ${NAYLIB_PASSC} \
+  -r tests/test_render.nim
 
 echo "==> verify: compile-check nuklear_impl.c (desktop)"
 command -v gcc >/dev/null || { echo "verify: gcc not found — install a C compiler" >&2; exit 1; }
