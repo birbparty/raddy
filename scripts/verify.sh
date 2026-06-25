@@ -81,6 +81,34 @@ nim c --mm:orc --hints:off --path:src -d:raddyFixed \
   ${NAYLIB_PASSC} \
   -r tests/test_render.nim
 
+echo "==> verify: vita C surface check — generate + gcc -fsyntax-only against stub"
+# Two-step check: Nim generates C; host gcc validates the generated C against the stub.
+# Step 1: generate C for the vita render+font+geom surface.
+#   --os:linux --cpu:amd64 avoids arm-vita-eabi-gcc (not installed on CI) while
+#   still triggering all -d:vita Nim preprocessor branches.
+#   {.exportc.} in vita_surface_check.nim prevents DCE of raddyRender + dependencies.
+VITA_CACHE=/tmp/raddy_vita_surface_check
+nim c --compileOnly --mm:arc --hints:off --path:src -d:vita \
+  --os:linux --cpu:amd64 \
+  --nimcache:"$VITA_CACHE" \
+  tests/stubs/vita_surface_check.nim
+# Step 2: syntax-check the generated C files against tests/stubs/raylib.h.
+#   raylib_api / render / font / geom are the only files that import raylib symbols.
+# Extract the Nim stdlib include path from the generated JSON build descriptor.
+NIMLIB=$(grep -oE '\-I(/[^"]+/lib)' "$VITA_CACHE/vita_surface_check.json" | head -1 | sed 's/-I//')
+gcc -std=c99 -fsyntax-only -w \
+  -Itests/stubs \
+  -I"$NIMLIB" \
+  -Isrc/raddy/vendor \
+  -include src/raddy/vendor/nk_config.h \
+  -D__vita__ \
+  "$VITA_CACHE/@praddy@sbackend@sraylib_api.nim.c" \
+  "$VITA_CACHE/@praddy@sbackend@srender.nim.c" \
+  "$VITA_CACHE/@praddy@sbackend@sfont.nim.c" \
+  "$VITA_CACHE/@praddy@sbackend@sgeom.nim.c"
+echo "    vita C surface check: OK"
+# Symbol presence/naming on the real vita console (arm-vita-eabi-gcc) is in raddy-tzc.
+
 echo "==> verify: nuklear.h SHA256 matches VENDORED.md"
 EXPECTED_SHA=$(grep 'SHA256 of `nuklear.h`' src/raddy/vendor/VENDORED.md | grep -oE '[0-9a-f]{64}')
 ACTUAL_SHA=$(sha256sum src/raddy/vendor/nuklear.h | awk '{print $1}')
