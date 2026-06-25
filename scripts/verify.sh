@@ -51,6 +51,10 @@ else
   echo "    WARNING: naylib not found in ~/.nimble/pkgs2 — skipping C-name verification"
 fi
 
+echo "==> verify: compile-only check src/raddy/input.nim (desktop + vita)"
+nim c --compileOnly --mm:orc --hints:off --path:src src/raddy/input.nim
+nim c --compileOnly --mm:arc --hints:off --path:src -d:vita src/raddy/input.nim
+
 echo "==> verify: compile-only check src/raddy/context.nim (desktop + vita)"
 nim c --compileOnly --mm:orc --hints:off --path:src src/raddy/context.nim
 nim c --compileOnly --mm:arc --hints:off --path:src -d:vita src/raddy/context.nim
@@ -61,6 +65,11 @@ echo "==> verify: test_context with -d:raddyFixed (exercises overflow detection)
 nim c --mm:orc --hints:off --path:src -d:raddyFixed \
   --path:"$BDDY_DIR" \
   -r tests/test_context.nim
+
+echo "==> verify: test_input with -d:raddyFixed (exercises fixed-buffer path)"
+nim c --mm:orc --hints:off --path:src -d:raddyFixed \
+  --path:"$BDDY_DIR" \
+  -r tests/test_input.nim
 
 echo "==> verify: test_render with -d:raddyFixed (exercises render overflow branch)"
 NAYLIB_PASSC=""
