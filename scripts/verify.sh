@@ -30,6 +30,11 @@ check_target orc
 echo "==> verify: type-check vita (-d:vita --mm:arc)"
 check_target arc -d:vita
 
+echo "==> verify: compile-check nuklear_impl.c"
+gcc -std=c99 -fsyntax-only -Wall \
+  -Isrc/raddy/vendor \
+  src/raddy/vendor/nuklear_impl.c
+
 echo "==> verify: nimble test"
 nimble test
 
