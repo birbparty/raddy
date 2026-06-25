@@ -124,3 +124,13 @@ void DrawTextureRec(Texture2D texture, rlRectangle source, Vector2 position, Col
 
 void BeginScissorMode(int x, int y, int width, int height);
 void EndScissorMode(void);
+
+/* -------------------------------------------------------------------------
+ * Gamepad (used by pump_vita.nim)
+ * Ordinals match raylib's GamepadButton / GamepadAxis enums.
+ * ------------------------------------------------------------------------- */
+
+bool IsGamepadButtonDown(int gamepad, int button);
+bool IsGamepadButtonPressed(int gamepad, int button);
+bool IsGamepadButtonReleased(int gamepad, int button);
+float GetGamepadAxisMovement(int gamepad, int axis);

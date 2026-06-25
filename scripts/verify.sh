@@ -14,10 +14,14 @@ cd "$REPO_ROOT"
 # The glob guard handles the current empty src/raddy/ state safely.
 check_target() {
   local mm="$1"; shift
+  local is_vita=0
+  for a in "$@"; do [[ "$a" == "-d:vita" ]] && is_vita=1; done
   echo "    nim check src/raddy.nim"
   nim check --mm:"$mm" --hints:off --path:src "$@" src/raddy.nim
   for f in src/raddy/*.nim src/raddy/backend/*.nim; do
     [[ -f "$f" ]] || continue
+    # pump_vita.nim has a {.error.} guard for non-vita builds; skip on desktop.
+    [[ "$f" == *pump_vita* ]] && [[ $is_vita -eq 0 ]] && continue
     echo "    nim check $f"
     nim check --mm:"$mm" --hints:off --path:src "$@" "$f"
   done
@@ -105,7 +109,8 @@ gcc -std=c99 -fsyntax-only -w \
   "$VITA_CACHE/@praddy@sbackend@sraylib_api.nim.c" \
   "$VITA_CACHE/@praddy@sbackend@srender.nim.c" \
   "$VITA_CACHE/@praddy@sbackend@sfont.nim.c" \
-  "$VITA_CACHE/@praddy@sbackend@sgeom.nim.c"
+  "$VITA_CACHE/@praddy@sbackend@sgeom.nim.c" \
+  "$VITA_CACHE/@praddy@sbackend@spump_vita.nim.c"
 echo "    vita C surface check: OK"
 # Symbol presence/naming on the real vita console (arm-vita-eabi-gcc) is in raddy-tzc.
 
