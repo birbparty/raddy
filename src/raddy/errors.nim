@@ -8,9 +8,10 @@
 ## game-specific module.
 
 const
-  RaddyCmdBufBytes* = 65536 ## 64 KiB fixed command buffer for nk_init_fixed.
+  RaddyCmdBufBytes* {.intdefine.} = 65536
+  ## 64 KiB fixed command buffer for nk_init_fixed (Vita path only).
   ## One full overlay panel at ~2–4 KB/frame gives ~16-32x headroom.
-  ## Override -d:raddyCmdBufBytes=N at build time for tight platforms.
+  ## Build-time override: -d:raddyCmdBufBytes=32768  (must be a power-of-two multiple of 1024).
   ## On desktop, nk_init_default is used instead (heap-backed, no fixed limit).
 
 type
@@ -26,10 +27,11 @@ type
 # Logging
 # ---------------------------------------------------------------------------
 
-proc raddyLog*(msg: string) {.inline.} =
-  ## Write a one-off diagnostic message.
-  ## Desktop: stderr. Vita: debugWriteLine (no-op in release; SceKernelDebugPrintf
-  ## in debug). In both cases: never raise, never allocate beyond msg.
+proc raddyLog*(msg: string) {.inline, raises: [].} =
+  ## Write a one-off diagnostic message. Never raises.
+  ## Desktop: stderr (IOError swallowed — a closed stderr must not crash a frame).
+  ## Vita debug: debugWriteLine (allocates; not safe in cdecl callbacks or hot path).
+  ## Vita release: no-op.
   when defined(vita):
     when defined(debug):
       proc debugWriteLine(s: cstring) {.importc: "debugWriteLine", header: "debugnet.h".}
@@ -37,7 +39,10 @@ proc raddyLog*(msg: string) {.inline.} =
     else:
       discard
   else:
-    stderr.writeLine("raddy: " & msg)
+    try:
+      stderr.writeLine("raddy: " & msg)
+    except CatchableError:
+      discard  ## stderr closed or redirected — swallow silently
 
 template raddyLogOnce*(sentinel: var bool; msg: string) =
   ## Log msg at most once per session.  `sentinel` is a module-level bool that
@@ -71,7 +76,7 @@ template raddyAssertFatal*(cond: bool; msg: string) =
 # ---------------------------------------------------------------------------
 ## Any proc registered as a C callback (nk_text_width_f, future draw hooks) MUST:
 ##   1. Not raise — Nim exceptions do not cross the C call boundary safely.
-##   2. Not echo/writeLine — only safe Nuklear state transitions.
+##   2. Not call raddyLog — writeLine/debugWriteLine allocate; use a pre-set error flag instead.
 ##   3. Not allocate — no new, @[], or string construction.
 ##   4. Return a safe zero/default on any internal error.
 ## See docs/prompts/error-strategy.md §cdecl Callback Rules.

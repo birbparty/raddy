@@ -34,10 +34,10 @@ type RaddyError* = enum
 ## Command Buffer Size
 
 ```nim
-const RaddyCmdBufBytes* = 65536  # 64 KiB
+const RaddyCmdBufBytes* {.intdefine.} = 65536  # 64 KiB
 ```
 
-Defined in `src/raddy/context.nim`.
+Defined in `src/raddy/errors.nim`. Override at build time: `-d:raddyCmdBufBytes=32768`.
 
 **Rationale**: Holds one full overlay panel's command stream under `nk_init_fixed`. A typical raddy UI frame with ~20 widgets generates 2–4 KB of commands. 64 KiB gives 16–32x headroom. Revisit if overflow trips in practice.
 

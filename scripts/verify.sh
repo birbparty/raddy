@@ -38,6 +38,8 @@ nim c --compileOnly --mm:arc --hints:off --path:src -d:vita src/raddy/types.nim
 echo "==> verify: compile-only check src/raddy/errors.nim (desktop + vita)"
 nim c --compileOnly --mm:orc --hints:off --path:src src/raddy/errors.nim
 nim c --compileOnly --mm:arc --hints:off --path:src -d:vita src/raddy/errors.nim
+echo "==> verify: compile-only check errors.nim with buffer size override"
+nim c --compileOnly --mm:arc --hints:off --path:src -d:vita -d:raddyCmdBufBytes=32768 src/raddy/errors.nim
 
 echo "==> verify: compile-check nuklear_impl.c (desktop)"
 command -v gcc >/dev/null || { echo "verify: gcc not found — install a C compiler" >&2; exit 1; }
