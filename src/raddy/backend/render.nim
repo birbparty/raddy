@@ -65,18 +65,20 @@ proc nkClear(ctx: ptr nk_context)
 const nkCmdCount = ord(NK_COMMAND_CUSTOM) + 1  ## 19 total command types
 static: doAssert ord(NK_COMMAND_CUSTOM) == 18, "NkCommandType layout changed — update nkCmdCount"
 
-## noopWarned is process-global (not per-context). The warn-once policy is intentional:
-## once a type has logged it is silenced for the process lifetime, including after a
-## context teardown+reinit. This is correct for a debug aid. THREADING: raddyRender
-## is single-threaded by design (Nuklear's context itself is not thread-safe); do NOT
-## call raddyRender from multiple threads without external synchronization.
-var noopWarned {.global.}: array[nkCmdCount, bool]
-
 ## One-per-process truncation sentinel for NK_COMMAND_TEXT oversize payloads.
 var textTruncWarnEmitted {.global.} = false
 
-## One-per-process truncation sentinel for over-large polygon/polyline point counts.
+## One shared latch across POLYGON / POLYGON_FILLED / POLYLINE: the first
+## truncation anywhere in the polygon family warns once for the whole process.
+## Intentional — avoids log spam in animation loops where many polys may
+## exceed PolyLineMax every frame.
 var polyTruncWarnEmitted {.global.} = false
+
+## Vita-only: warn once when the ellipse (non-square CIRCLE/CIRCLE_FILLED)
+## no-op path is hit, so host authors notice missing UI instead of debugging
+## blank space.
+when defined(vita):
+  var ellipseNoopWarnEmitted {.global.} = false
 
 # ---------------------------------------------------------------------------
 # raddyRender
@@ -99,6 +101,13 @@ proc raddyRender*(ctx: ptr nk_context; framebufferH: int32;
   ##              silently truncated to RaddyMaxTextBytes-1 bytes (logged once).
   ##
   ## Calls nk_clear on exit. Do NOT also call raddyBundleClear the same frame.
+  if ctx == nil:
+    ## Graceful nil-ctx guard: prefer early-return over assert because assert
+    ## compiles out under -d:release/-d:danger, where a nil-deref crash is
+    ## hardest to diagnose on-device (vita).
+    raddyLog("raddyRender: ctx is nil — skipping frame")
+    bufOverflow = false
+    return
   assert framebufferH > 0, "raddyRender: framebufferH must be > 0 (pass RenderTexture.texture.height)"
   var scissorActive = false
 
@@ -140,6 +149,9 @@ proc raddyRender*(ctx: ptr nk_context; framebufferH: int32;
         pts
       )
       let col = toRColor(cv.color)
+      ## line_thickness is nk_ushort (unsigned); <= 1 means 0 or 1 → thin strip.
+      ## Do NOT change to < 1 — that would route thickness-1 curves through the
+      ## slow per-segment path unnecessarily.
       if cv.line_thickness <= 1:
         rDrawLineStrip(addr pts[0], int32(BezierSegs + 1), col)
       else:
@@ -207,6 +219,10 @@ proc raddyRender*(ctx: ptr nk_context; framebufferH: int32;
         rDrawRing(RVec2(x: cx, y: cy), innerR, rx, 0.0f32, 360.0f32, ArcSegs, col)
       else:
         ## Ellipse outline: no-op on vita (DrawEllipseLines guarded in raylib_api.nim).
+        when defined(vita):
+          if not ellipseNoopWarnEmitted:
+            ellipseNoopWarnEmitted = true
+            raddyLog("raddyRender: NK_COMMAND_CIRCLE (ellipse w!=h) is a no-op on vita (silenced)")
         rDrawEllipseLines(int32(cx), int32(cy), rx, ry, col)
 
     of NK_COMMAND_CIRCLE_FILLED:
@@ -220,25 +236,40 @@ proc raddyRender*(ctx: ptr nk_context; framebufferH: int32;
         rDrawCircleSector(RVec2(x: cx, y: cy), rx, 0.0f32, 360.0f32, ArcSegs, col)
       else:
         ## Ellipse fill: no-op on vita (DrawEllipse guarded in raylib_api.nim).
+        when defined(vita):
+          if not ellipseNoopWarnEmitted:
+            ellipseNoopWarnEmitted = true
+            raddyLog("raddyRender: NK_COMMAND_CIRCLE_FILLED (ellipse w!=h) is a no-op on vita (silenced)")
         rDrawEllipse(int32(cx), int32(cy), rx, ry, col)
 
     of NK_COMMAND_ARC:
       let ac = cast[ptr nk_command_arc](cmd)
       let outerR = ac.r.float32
       let innerR = max(0.0f32, outerR - ac.line_thickness.float32)
+      ## Nuklear: absolute radians, CCW+. raylib: degrees, CW+ in Y-down screen.
+      ## The math→screen Y-flip and raylib's CW sweep cancel, so NO negation is
+      ## needed. We must ensure start <= end for raylib's span math — Nuklear does
+      ## not guarantee this ordering.
+      let arcS = radToDeg(ac.a[0])
+      var arcE = radToDeg(ac.a[1])
+      if arcE < arcS: arcE += 360.0f32
       rDrawRing(
         RVec2(x: ac.cx.float32, y: ac.cy.float32),
         innerR, outerR,
-        radToDeg(ac.a[0]), radToDeg(ac.a[1]),
+        arcS, arcE,
         ArcSegs, toRColor(ac.color)
       )
 
     of NK_COMMAND_ARC_FILLED:
       let af = cast[ptr nk_command_arc_filled](cmd)
+      ## Same angle normalization as NK_COMMAND_ARC — see comment there.
+      let afS = radToDeg(af.a[0])
+      var afE = radToDeg(af.a[1])
+      if afE < afS: afE += 360.0f32
       rDrawCircleSector(
         RVec2(x: af.cx.float32, y: af.cy.float32),
         af.r.float32,
-        radToDeg(af.a[0]), radToDeg(af.a[1]),
+        afS, afE,
         ArcSegs, toRColor(af.color)
       )
 
@@ -286,8 +317,10 @@ proc raddyRender*(ctx: ptr nk_context; framebufferH: int32;
           raddyLog("raddyRender: NK_COMMAND_POLYGON_FILLED point_count " & $count &
                    " exceeds PolyLineMax (" & $PolyLineMax & ") — truncated (silenced)")
         let col = toRColor(pf.color)
-        ## Fan triangulation from vertex 0. Convex polygons are exact; concave may
-        ## have artifacts but Nuklear's widget-layer polygons are always convex.
+        ## Fan triangulation from vertex 0. Valid only for convex polygons —
+        ## concave polygons will fill the convex hull with overlapping triangles
+        ## rather than the true concave shape. Nuklear's widget-layer polygons
+        ## are always convex, so this is correct for raddy's use case.
         for i in 1 ..< safeCount - 1:
           var ta = RVec2(x: pts[0].x.float32,   y: pts[0].y.float32)
           var tb = RVec2(x: pts[i].x.float32,   y: pts[i].y.float32)
