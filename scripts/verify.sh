@@ -20,8 +20,9 @@ check_target() {
   nim check --mm:"$mm" --hints:off --path:src "$@" src/raddy.nim
   for f in src/raddy/*.nim src/raddy/backend/*.nim; do
     [[ -f "$f" ]] || continue
-    # pump_vita.nim has a {.error.} guard for non-vita builds; skip on desktop.
-    [[ "$f" == *pump_vita* ]] && [[ $is_vita -eq 0 ]] && continue
+    # Platform-specific pumps have {.error.} guards for the opposite target.
+    [[ "$f" == *pump_vita*   ]] && [[ $is_vita -eq 0 ]] && continue
+    [[ "$f" == *pump_naylib* ]] && [[ $is_vita -eq 1 ]] && continue
     echo "    nim check $f"
     nim check --mm:"$mm" --hints:off --path:src "$@" "$f"
   done
