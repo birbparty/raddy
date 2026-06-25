@@ -31,7 +31,7 @@ happens in bead **raddy-tzc** (external repo check).
 | `RFont`   | `Font`            | partial view (passed by value)       | Needs check        |
 | `RTexture`| `Texture2D`       | `id,width,height,mipmaps,format`    | Confirmed present  |
 
-¹ **rlRectangle naming**: naylib (desktop) renames `Rectangle → rlRectangle` to
+¹ **rlRectangle naming** (verified in bead raddy-tzc): naylib (desktop) renames `Rectangle → rlRectangle` to
 avoid the Win32 `RECT` collision. The vita raylib_console port likely uses the
 original `Rectangle` name. If so, add a vita guard in `raylib_api.nim`:
 ```nim
@@ -161,26 +161,47 @@ mapping (D-pad → cursor, Cross → click, etc.).
 
 ## 3. Stub / CI Gate
 
-`tests/stubs/raylib.h` is a minimal C header stub providing all types and
-function prototypes from §1. It is used by the vita compile-only gate in
-`scripts/verify.sh`:
+`tests/stubs/raylib.h` is a minimal C header stub providing every type and
+function prototype from §1 (draw surface) plus `MeasureTextEx` from font.nim.
+`tests/stubs/vita_surface_check.nim` is the driver: it exports two procs
+(`vitaRenderSurface`, `vitaMeasureSurface`) via `{.exportc.}` to prevent dead-
+code elimination of the raylib importc surface.
+
+The gate in `scripts/verify.sh` runs two steps:
 
 ```bash
+# Step 1: generate C (triggers all -d:vita Nim branches; --os:linux avoids
+#   the vita cross-compiler, which is not installed on CI)
 nim c --compileOnly --mm:arc --hints:off --path:src -d:vita \
-  --passC:"-Itests/stubs" \
-  src/raddy/backend/render.nim
+  --os:linux --cpu:amd64 \
+  --nimcache:/tmp/raddy_vita_surface_check \
+  tests/stubs/vita_surface_check.nim
+
+# Step 2: validate generated backend C against the stub (host gcc, no link)
+gcc -std=c99 -fsyntax-only -w \
+  -Itests/stubs \
+  -I<nimlib> -Isrc/raddy/vendor \
+  -include src/raddy/vendor/nk_config.h -D__vita__ \
+  /tmp/raddy_vita_surface_check/@praddy@sbackend@sraylib_api.nim.c \
+  /tmp/raddy_vita_surface_check/@praddy@sbackend@srender.nim.c \
+  /tmp/raddy_vita_surface_check/@praddy@sbackend@sfont.nim.c \
+  /tmp/raddy_vita_surface_check/@praddy@sbackend@sgeom.nim.c
 ```
 
-This gate verifies that:
-- The Nim type checker resolves all symbols against the expected C surface
-- No backend-only symbol leaks into the decoupled core
-- The generated C code compiles against the stub header (syntax-only; no link)
+This gate verifies:
+- `raddyRender` and `raddyMeasureWidth` are emitted in the generated C
+  (not dead-code-eliminated)
+- Every `{.importc, header: "raylib.h".}` proc in the backend surface is
+  declared in the stub with a compatible signature
+- Missing symbols cause a real C compiler error (confirmed: removing
+  `MeasureTextEx` from the stub fails the gate)
 
 **What this does NOT verify:**
-- Symbol naming on the real vita console (see beads raddy-5ce / raddy-tzc)
+- Symbol naming on the real vita console arm-vita-eabi-gcc (see bead raddy-tzc)
 - Runtime correctness of vita draw calls
 - Presence of `DrawRectangleRoundedLinesEx`, `DrawRing`, `DrawLineStrip`
   on the actual vita port (marked "Needs check" above)
+- ABI sizes (--os:linux uses 64-bit layout; vita is 32-bit ARM)
 
 ---
 

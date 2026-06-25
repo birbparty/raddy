@@ -4,7 +4,9 @@
  * Declares every type and function that src/raddy/backend/raylib_api.nim
  * imports via {.importc, header: "raylib.h".}. Used by:
  *
- *   nim c --compileOnly -d:vita --passC:-Itests/stubs src/raddy/backend/render.nim
+ *   nim c --compileOnly -d:vita --os:linux --cpu:amd64 --nimcache:/tmp/... \
+ *     tests/stubs/vita_surface_check.nim
+ *   gcc -std=c99 -fsyntax-only -Itests/stubs ... /tmp/.../@praddy@sbackend@s*.nim.c
  *
  * This stub is NOT the real raylib — it provides just enough C surface for
  * the Nim compiler to verify types and function signatures. No implementations
@@ -27,7 +29,7 @@
  *   DrawRing, DrawCircleSector,
  *   DrawTextureRec, BeginScissorMode, EndScissorMode.
  *
- * Symbols that need vita verification (raddy-5ce / raddy-tzc):
+ * Symbols that need vita verification (raddy-tzc):
  *   DrawRectangleRoundedLinesEx — added in raylib 4.5; check vita port version.
  *   DrawRectangleGradientEx    — check corner-color parameter order on vita.
  *   DrawLineStrip              — may be absent on older vita ports.
@@ -44,8 +46,6 @@
  * Core types
  * ------------------------------------------------------------------------- */
 
-typedef unsigned char  uchar;
-
 typedef struct { unsigned char r, g, b, a; } Color;
 
 typedef struct { float x, y; } Vector2;
@@ -55,22 +55,21 @@ typedef struct { float x, y, width, height; } Rectangle;
 typedef Rectangle rlRectangle;
 
 typedef struct {
-    /* Partial view: only the fields raddy accesses are declared here. */
-    int   baseSize;
-    int   glyphCount;
-    int   glyphPadding;
-    void *texture;
-    void *recs;
-    void *glyphs;
-} Font;
-
-typedef struct {
     unsigned int id;
     int          width;
     int          height;
     int          mipmaps;
     int          format;
 } Texture2D;
+
+typedef struct {
+    int       baseSize;
+    int       glyphCount;
+    int       glyphPadding;
+    Texture2D texture;   /* embedded by value, same as real raylib Font */
+    Rectangle *recs;
+    void      *glyphs;   /* GlyphInfo* — we don't access fields; void* is fine */
+} Font;
 
 /* -------------------------------------------------------------------------
  * Geometry — filled shapes
@@ -110,6 +109,8 @@ void DrawLineStrip(Vector2 *points, int pointCount, Color color);
 void DrawTextEx(Font font, const char *text, Vector2 position,
                 float fontSize, float spacing, Color tint);
 #define rlDrawTextEx DrawTextEx
+
+Vector2 MeasureTextEx(Font font, const char *text, float fontSize, float spacing);
 
 /* -------------------------------------------------------------------------
  * Textures
