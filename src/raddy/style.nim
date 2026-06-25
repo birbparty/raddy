@@ -87,32 +87,44 @@ type NkStyleColors* {.importc: "enum nk_style_colors", header: nkH,
   NK_COLOR_COUNT                  = 32
 
 # ---------------------------------------------------------------------------
-# Style API
+# Style API — raw C bindings (private; use raddy* wrappers below)
 # ---------------------------------------------------------------------------
 
-proc nk_style_default*(ctx: ptr nk_context)
+proc nk_style_default(ctx: ptr nk_context)
     {.importc: "nk_style_default", header: nkH, sideEffect.}
-  ## Apply Nuklear's built-in dark theme to ctx.
-  ## Equivalent to nk_style_from_table(ctx, NK_COLOR_MAP defaults).
-  ## Call once after raddyBundleCreate, before the first nk_window_begin.
 
-proc nk_style_from_table*(ctx: ptr nk_context; colors: ptr nk_color)
+proc nk_style_from_table(ctx: ptr nk_context; colors: ptr nk_color)
     {.importc: "nk_style_from_table", header: nkH, sideEffect.}
-  ## Apply a custom palette to ctx. colors must point to an array of NK_COLOR_COUNT
-  ## nk_color values, indexed by NkStyleColors. Passing nil is equivalent to calling
-  ## nk_style_default (uses Nuklear's built-in defaults).
 
-proc nk_style_get_color_by_name*(c: NkStyleColors): cstring
+proc nk_style_get_color_by_name(c: NkStyleColors): cstring
     {.importc: "nk_style_get_color_by_name", header: nkH.}
-  ## Return the C-string name of a NkStyleColors value (e.g. "NK_COLOR_TEXT").
-  ## Useful for debug UI and palette editors.
+  ## NOTE: c must be in 0..<NK_COLOR_COUNT. Passing NK_COLOR_COUNT itself
+  ## indexes nk_color_names[32] one past the end — C UB. Use raddyColorName.
 
 {.pop.}
 
 # ---------------------------------------------------------------------------
-# Convenience
+# Convenience wrappers (public surface)
 # ---------------------------------------------------------------------------
 
 proc raddyStyleDefault*(ctx: ptr nk_context) {.inline, raises: [].} =
-  ## Apply the Nuklear default dark theme. Thin wrapper around nk_style_default.
+  ## Apply the Nuklear default dark theme to ctx.
+  ## ctx must be non-nil and initialised via raddyBundleCreate / raddyCtxInit.
+  ## Call once after init, before the first nk_window_begin.
   nk_style_default(ctx)
+
+proc raddyStyleFromTable*(ctx: ptr nk_context;
+                          palette: array[ord(NK_COLOR_COUNT), nk_color])
+    {.inline, raises: [].} =
+  ## Apply a custom palette to ctx. palette must have exactly NK_COLOR_COUNT (32)
+  ## entries indexed by NkStyleColors ordinals. The array size is checked at
+  ## compile time — a shorter array is a type error.
+  ## ctx must be non-nil and initialised via raddyBundleCreate / raddyCtxInit.
+  nk_style_from_table(ctx, cast[ptr nk_color](unsafeAddr palette[0]))
+
+proc raddyColorName*(c: NkStyleColors): cstring {.inline, raises: [].} =
+  ## Return the C-string name for a NkStyleColors value (e.g. "NK_COLOR_TEXT").
+  ## Returns nil for NK_COLOR_COUNT (sentinel, not a valid color index).
+  ## Guarded wrapper around nk_style_get_color_by_name; safe for all enum values.
+  if ord(c) >= ord(NK_COLOR_COUNT): return nil
+  nk_style_get_color_by_name(c)
