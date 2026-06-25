@@ -31,6 +31,10 @@ check_target orc
 echo "==> verify: type-check vita (-d:vita --mm:arc)"
 check_target arc -d:vita
 
+echo "==> verify: compile-only check src/raddy/types.nim (desktop + vita)"
+nim c --compileOnly --mm:orc --hints:off --path:src src/raddy/types.nim
+nim c --compileOnly --mm:arc --hints:off --path:src -d:vita src/raddy/types.nim
+
 echo "==> verify: compile-check nuklear_impl.c (desktop)"
 command -v gcc >/dev/null || { echo "verify: gcc not found — install a C compiler" >&2; exit 1; }
 gcc -std=c99 -fsyntax-only -Wall \

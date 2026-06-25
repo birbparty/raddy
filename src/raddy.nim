@@ -17,11 +17,5 @@
 ## This file intentionally starts empty — submodule imports are added alongside
 ## each implementation task so the entry point always compiles.
 
-# Submodule re-exports will be added here as each src/raddy/*.nim is created.
-# Example pattern (matches atty/baggie convention):
-#
-#   import raddy/types
-#   export types
-#
-#   import raddy/context
-#   export context
+import raddy/types
+export types
