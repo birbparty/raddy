@@ -90,8 +90,10 @@ type
 # ---------------------------------------------------------------------------
 
 type
-  ## nk_buffer: expose allocated/size for per-frame overflow detection.
+  ## nk_buffer: PARTIAL VIEW — only allocated/size exposed for overflow detection.
   ## ctx.memory.allocated >= ctx.memory.size → command buffer is full.
+  ## Do NOT sizeof, construct-by-value, or copyMem this type from Nim;
+  ## sizeof is deferred to C (correct 120-byte struct via nuklear.h).
   nk_buffer* {.importc: "struct nk_buffer", header: nkH.} = object
     allocated*: nk_size  ## bytes consumed so far this frame
     size*:      nk_size  ## total capacity
@@ -99,7 +101,10 @@ type
   ## nk_input: opaque; passed by pointer to nk_input_* procs only.
   nk_input* {.importc: "struct nk_input", header: nkH.} = object
 
-  ## nk_context: expose only the fields accessed directly by raddy core.
+  ## nk_context: PARTIAL VIEW — input and memory fields only.
+  ## nk_style sits between input and memory in C but is not declared here;
+  ## field access is by name in generated C (correct), not by Nim-computed offset.
+  ## sizeof is deferred to C (correct full 18456-byte struct via nuklear.h).
   nk_context* {.importc: "struct nk_context", header: nkH.} = object
     input*:  nk_input  ## keyboard + mouse snapshot (fed inside begin/end boundary)
     memory*: nk_buffer ## command buffer — check .allocated vs .size after UI build
@@ -137,7 +142,9 @@ type
     NK_BUTTON_MIDDLE = 1
     NK_BUTTON_RIGHT  = 2
     NK_BUTTON_DOUBLE = 3  ## double-click of the left mouse button
-    NK_BUTTON_MAX    = 4
+    NK_BUTTON_X1     = 4  ## "Back" (mouse button 4)
+    NK_BUTTON_X2     = 5  ## "Forward" (mouse button 5)
+    NK_BUTTON_MAX    = 6
 
   NkKeys* {.importc: "enum nk_keys", header: nkH,
             size: sizeof(cint).} = enum
@@ -196,6 +203,7 @@ type
     NK_TEXT_ALIGN_BOTTOM   = 0x20
 
 ## Convenience combinations (bitmask OR of NkTextAlign values).
+## These are raddy-defined constants, NOT re-exported macros from nuklear.h.
 const
   NK_TEXT_LEFT*: nk_flags =
     nk_flags(NK_TEXT_ALIGN_MIDDLE) or nk_flags(NK_TEXT_ALIGN_LEFT)
@@ -203,6 +211,9 @@ const
     nk_flags(NK_TEXT_ALIGN_MIDDLE) or nk_flags(NK_TEXT_ALIGN_CENTERED)
   NK_TEXT_RIGHT*: nk_flags =
     nk_flags(NK_TEXT_ALIGN_MIDDLE) or nk_flags(NK_TEXT_ALIGN_RIGHT)
+
+## NK_* constants are intentionally unpure (no {.pure.}) for C-name parity — do not add {.pure.}.
+## Enum ordinal cross-checks live in tests/test_smoke.nim (NK_COMMAND_CUSTOM==18, NK_BUTTON_MAX==6, NK_KEY_MAX==43).
 
 # ---------------------------------------------------------------------------
 # Command base and header
@@ -351,10 +362,11 @@ type
     img*:    nk_image
     col*:    nk_color
 
-  # --- Custom (logged no-op; never call the callback) ---
+  ## nk_command_custom: PARTIAL VIEW — callback field omitted (raddy never invokes it).
+  ## Do not sizeof or construct-by-value; the real C struct has a trailing function
+  ## pointer that is not declared here.
   nk_command_custom* {.importc: "struct nk_command_custom", header: nkH.} = object
     header*:        nk_command
     x*, y*:         int16
     w*, h*:         uint16
     callback_data*: nk_handle
-    # callback field omitted — raddy never invokes nk_command_custom callbacks

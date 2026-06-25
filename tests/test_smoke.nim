@@ -23,4 +23,4 @@ spec "raddy entry point":
 
   it "re-exports NK_BUTTON_MAX sentinel":
     verify:
-      NK_BUTTON_MAX.ord == 4
+      NK_BUTTON_MAX.ord == 6  ## X1=4, X2=5, MAX=6 — verified against nuklear.h
