@@ -10,11 +10,15 @@
 ##   Mouse wheel (vertical) → nk_input_scroll (dy)
 ##   Shift / Ctrl held   → NK_KEY_SHIFT / NK_KEY_CTRL every frame
 ##   Nav keys held       → NK_KEY_BACKSPACE, DEL, ENTER, TAB, arrows, Home, End
-##   Ctrl+C/X/V/A        → NK_KEY_COPY / CUT / PASTE / TEXT_START (press-only)
+##   Ctrl+C/X/V/A        → NK_KEY_COPY / CUT / PASTE / TEXT_SELECT_ALL (press-only)
 ##   GetCharPressed loop → raddyInputUnicode (drains all chars queued this frame)
 ##
 ## This module is an OPTIONAL helper. The decoupled core (input.nim) is still
 ## the only thing that imports Nuklear; hosts may feed raw events directly.
+##
+## NOTE: unlike pump_vita.nim (which is called BETWEEN begin/end), this pump
+## wraps raddyInputBegin and raddyInputEnd internally. The two pumps are NOT
+## interchangeable as drop-in replacements for each other.
 ##
 ## Desktop-only: guarded so vita builds fail fast on accidental import.
 
@@ -108,7 +112,9 @@ proc raddyNaylibPump*(ctx: ptr nk_context) {.raises: [].} =
   if isMouseButtonPressed(MouseMiddle):  raddyInputButton(ctx, NK_BUTTON_MIDDLE, mx, my, true)
   if isMouseButtonReleased(MouseMiddle): raddyInputButton(ctx, NK_BUTTON_MIDDLE, mx, my, false)
 
-  # -- Vertical scroll (dy: positive = scroll down in raylib) ---------------
+  # -- Vertical scroll -------------------------------------------------------
+  # raylib GetMouseWheelMove: positive = scroll UP (wheel toward user).
+  # Nuklear nk_input_scroll: positive dy scrolls content UP. No negation needed.
   let scroll = getMouseWheelMove()
   if scroll != 0.0f32:
     raddyInputScroll(ctx, 0.0f32, scroll)
@@ -138,13 +144,17 @@ proc raddyNaylibPump*(ctx: ptr nk_context) {.raises: [].} =
   raddyInputKey(ctx, NK_KEY_COPY,        ctrl and isKeyPressed(KeyC))
   raddyInputKey(ctx, NK_KEY_CUT,         ctrl and isKeyPressed(KeyX))
   raddyInputKey(ctx, NK_KEY_PASTE,       ctrl and isKeyPressed(KeyV))
-  raddyInputKey(ctx, NK_KEY_TEXT_START,  ctrl and isKeyPressed(KeyA))
+  raddyInputKey(ctx, NK_KEY_TEXT_SELECT_ALL, ctrl and isKeyPressed(KeyA))
 
   # -- Unicode text input (drain the full GetCharPressed queue this frame) ---
   # GetCharPressed dequeues one codepoint per call; returns 0 when queue empty.
+  # Only feed printable codepoints (U+0020+, excluding DEL U+007F) — control
+  # codes are already handled as NK_KEY_* events above and must not be fed
+  # twice via raddyInputUnicode.
   while true:
     let cp = getCharPressed()
     if cp <= 0: break
-    raddyInputUnicode(ctx, uint32(cp))
+    if cp >= 0x20 and cp != 0x7F:
+      raddyInputUnicode(ctx, uint32(cp))
 
   raddyInputEnd(ctx)
