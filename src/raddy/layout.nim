@@ -37,7 +37,7 @@ type
     NK_DYNAMIC = 0  ## values are fractions (0.0–1.0) of available width
     NK_STATIC  = 1  ## values are absolute pixel widths
 
-  NkWindowFlags* {.importc: "enum nk_window_flags", header: nkH,
+  NkWindowFlags* {.importc: "enum nk_panel_flags", header: nkH,
                    size: sizeof(cint).} = enum
     ## Window / group feature flags (combine with `or`).
     NK_WINDOW_BORDER          = 1 shl 0
@@ -87,49 +87,53 @@ proc nk_spacing(ctx: ptr nk_context; cols: cint)
 # ---------------------------------------------------------------------------
 
 proc raddyLayoutRowDynamic*(ctx: ptr nk_context; height: float32;
-                             cols: int) {.inline.} =
+                             cols: int) {.inline, raises: [].} =
   ## Set the next row to use `cols` equal-width columns, each `height` pixels tall.
   ## Pass height=0 to use the widget's natural height.
   nk_layout_row_dynamic(ctx, height, cols.cint)
 
 proc raddyLayoutRowStatic*(ctx: ptr nk_context; height: float32;
-                            itemWidth: int; cols: int) {.inline.} =
+                            itemWidth: int; cols: int) {.inline, raises: [].} =
   ## Set the next row to use `cols` columns of fixed `itemWidth` pixels each,
   ## `height` pixels tall.
   nk_layout_row_static(ctx, height, itemWidth.cint, cols.cint)
 
 proc raddyLayoutRowBegin*(ctx: ptr nk_context; fmt: NkLayoutFormat;
-                           rowHeight: float32; cols: int) {.inline.} =
+                           rowHeight: float32; cols: int) {.inline, raises: [].} =
   ## Begin a manual row with `cols` slots.
   ## Follow with raddyLayoutRowPush for each slot, then raddyLayoutRowEnd.
   ##   NK_DYNAMIC: push values are ratios (0.0–1.0) of row width
   ##   NK_STATIC:  push values are absolute pixel widths
   nk_layout_row_begin(ctx, fmt, rowHeight, cols.cint)
 
-proc raddyLayoutRowPush*(ctx: ptr nk_context; value: float32) {.inline.} =
+proc raddyLayoutRowPush*(ctx: ptr nk_context; value: float32) {.inline, raises: [].} =
   ## Advance to the next slot in a raddyLayoutRowBegin block.
   ## Value is a ratio (NK_DYNAMIC) or pixel width (NK_STATIC).
   nk_layout_row_push(ctx, value)
 
-proc raddyLayoutRowEnd*(ctx: ptr nk_context) {.inline.} =
-  ## End a raddyLayoutRowBegin block.
+proc raddyLayoutRowEnd*(ctx: ptr nk_context) {.inline, raises: [].} =
+  ## End a raddyLayoutRowBegin block. Must be called once per raddyLayoutRowBegin.
   nk_layout_row_end(ctx)
 
 proc raddyGroupBegin*(ctx: ptr nk_context; title: string;
-                      flags: nk_flags = 0): bool {.inline.} =
+                      flags: nk_flags = 0): bool {.inline, raises: [].} =
   ## Open a scrollable group sub-container with the given title and window flags.
   ## Returns true if the group is visible; you MUST call raddyGroupEnd when true.
+  ##
+  ## The title also serves as the group's unique ID within the window — two groups
+  ## with the same title share scroll state. Use nk_group_begin_titled (not bound
+  ## here) when you need a distinct name/title pair.
   ##
   ## Combine NkWindowFlags values with `or` for the flags parameter:
   ##   NK_WINDOW_BORDER.nk_flags or NK_WINDOW_NO_SCROLLBAR.nk_flags
   bool(nk_group_begin(ctx, title.cstring, flags))
 
-proc raddyGroupEnd*(ctx: ptr nk_context) {.inline.} =
+proc raddyGroupEnd*(ctx: ptr nk_context) {.inline, raises: [].} =
   ## Close a group opened by raddyGroupBegin. Must be called when raddyGroupBegin
   ## returned true.
   nk_group_end(ctx)
 
-proc raddySpacing*(ctx: ptr nk_context; cols: int) {.inline.} =
+proc raddySpacing*(ctx: ptr nk_context; cols: int) {.inline, raises: [].} =
   ## Advance `cols` widget slots in the current row without drawing anything.
   nk_spacing(ctx, cols.cint)
 
