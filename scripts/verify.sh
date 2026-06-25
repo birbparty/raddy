@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
 # Nim VERIFY script — run by `make test` and the ralph pre-commit hook.
 # Runs `nim check` (semantic type-check, no codegen) on src/raddy.nim and all
-# src/raddy/*.nim submodules for both desktop and Vita targets, then runs the
-# nimble test suite.
+# src/raddy/*.nim submodules for both desktop and Vita targets, runs a C syntax
+# check on nuklear_impl.c (desktop and Vita macro configurations), then runs
+# the nimble test suite.
 set -euo pipefail
 trap 'echo "==> verify: FAILED" >&2' ERR
 
@@ -30,8 +31,15 @@ check_target orc
 echo "==> verify: type-check vita (-d:vita --mm:arc)"
 check_target arc -d:vita
 
-echo "==> verify: compile-check nuklear_impl.c"
+echo "==> verify: compile-check nuklear_impl.c (desktop)"
+command -v gcc >/dev/null || { echo "verify: gcc not found — install a C compiler" >&2; exit 1; }
 gcc -std=c99 -fsyntax-only -Wall \
+  -Isrc/raddy/vendor \
+  src/raddy/vendor/nuklear_impl.c
+
+echo "==> verify: compile-check nuklear_impl.c (vita macro path)"
+gcc -std=c99 -fsyntax-only -Wall \
+  -DNK_VITA \
   -Isrc/raddy/vendor \
   src/raddy/vendor/nuklear_impl.c
 

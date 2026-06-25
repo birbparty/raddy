@@ -20,7 +20,9 @@
 
 /* NK_INCLUDE_DEFAULT_ALLOCATOR: desktop only (heap-backed nk_init_default).
  * On Vita use nk_init_fixed with a pre-allocated buffer instead.
- * Controlled by the consumer build — define -DNK_VITA or -Dvita to opt out. */
+ * __vita__: set by the Vita cross-compiler toolchain.
+ * NK_VITA:  opt-out escape hatch for host builds that simulate Vita config
+ *           (pass -DNK_VITA on the gcc/clang command line). */
 #if !defined(__vita__) && !defined(NK_VITA)
 #  define NK_INCLUDE_DEFAULT_ALLOCATOR
 #endif

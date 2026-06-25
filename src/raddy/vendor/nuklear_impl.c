@@ -9,11 +9,14 @@
  *   {.passC: "-include path/to/nk_config.h".}
  * to guarantee this without repeating the #defines).
  *
- * Build integration (raddy.nimble / nim c):
- *   {.compile: "vendor/nuklear_impl.c".}
- * in src/raddy/types.nim (or a dedicated import shim).
+ * Build integration: src/raddy/vendor.nim sets
+ *   {.compile: currentSourcePath().parentDir() / "vendor" / "nuklear_impl.c".}
+ * so any module importing vendor.nim (directly or transitively) triggers compilation.
  */
 
+/* Explicit #include so standalone gcc syntax-checks work without -include.
+ * When built via vendor.nim the same header also arrives via -include; the
+ * include-guard (RADDY_NK_CONFIG_H) makes this a safe no-op in that case. */
 #include "nk_config.h"
 #define NK_IMPLEMENTATION
 #include "nuklear.h"
