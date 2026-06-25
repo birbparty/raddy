@@ -81,6 +81,14 @@ nim c --mm:orc --hints:off --path:src -d:raddyFixed \
   ${NAYLIB_PASSC} \
   -r tests/test_render.nim
 
+echo "==> verify: compile-only check src/raddy/backend/render.nim (-d:vita with stub)"
+# Verify render.nim resolves against the expected vita host surface (tests/stubs/raylib.h).
+# This is a type-check + C codegen pass; --compileOnly skips linking.
+# Symbol presence/naming on the real vita console port is verified in raddy-tzc (external repos).
+nim c --compileOnly --mm:arc --hints:off --path:src -d:vita \
+  --passC:"-Itests/stubs" \
+  src/raddy/backend/render.nim
+
 echo "==> verify: nuklear.h SHA256 matches VENDORED.md"
 EXPECTED_SHA=$(grep 'SHA256 of `nuklear.h`' src/raddy/vendor/VENDORED.md | grep -oE '[0-9a-f]{64}')
 ACTUAL_SHA=$(sha256sum src/raddy/vendor/nuklear.h | awk '{print $1}')
