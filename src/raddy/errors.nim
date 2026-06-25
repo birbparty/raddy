@@ -14,6 +14,8 @@ const
   ## Build-time override: -d:raddyCmdBufBytes=32768  (must be a power-of-two multiple of 1024).
   ## On desktop, nk_init_default is used instead (heap-backed, no fixed limit).
 
+static: doAssert RaddyCmdBufBytes > 0, "RaddyCmdBufBytes must be > 0; check -d:raddyCmdBufBytes"
+
 type
   RaddyError* = enum
     reOk
