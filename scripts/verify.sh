@@ -41,6 +41,16 @@ nim c --compileOnly --mm:arc --hints:off --path:src -d:vita src/raddy/errors.nim
 echo "==> verify: compile-only check errors.nim with buffer size override"
 nim c --compileOnly --mm:arc --hints:off --path:src -d:vita -d:raddyCmdBufBytes=32768 src/raddy/errors.nim
 
+echo "==> verify: compile-only check src/raddy/backend/raylib_api.nim"
+NAYLIB_DIR=$(find "$HOME/.nimble/pkgs2" -maxdepth 1 -name 'naylib-*' -type d | head -1)
+if [[ -n "$NAYLIB_DIR" ]]; then
+  nim c --compileOnly --mm:orc --hints:off --path:src --passC:"-I${NAYLIB_DIR}/raylib" \
+    tests/verify_raylib_codegen.nim
+  echo "    C names verified against raylib.h"
+else
+  echo "    WARNING: naylib not found in ~/.nimble/pkgs2 — skipping C-name verification"
+fi
+
 echo "==> verify: compile-only check src/raddy/context.nim (desktop + vita)"
 nim c --compileOnly --mm:orc --hints:off --path:src src/raddy/context.nim
 nim c --compileOnly --mm:arc --hints:off --path:src -d:vita src/raddy/context.nim

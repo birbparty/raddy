@@ -1,12 +1,14 @@
 ## raylib_api spec: Nim-level type aliases are correct and importc bindings compile.
 ##
 ## These tests only verify raddy's R* types — no raylib draw calls are made.
-## C-level verification (linking against libraylib) happens when a game imports
-## raddy and compiles with naylib. Proc signatures are verified by nim check in
-## verify.sh; the importc names are verified at game link time.
+## C-level importc NAME verification is done in verify.sh via
+## tests/verify_raylib_codegen.nim compiled with --compileOnly + naylib passC:
+## that file references every r* proc so gcc checks the C names against raylib.h.
+## Full signature type-checking happens at game build time.
 ##
-## Note: the test binary is compiled with --passC:"-I<naylib_raylib_dir>" in
-## the nimble task (config.nims) so raylib.h is found for the importc types.
+## Note: the test binary needs --passC:"-I<naylib_raylib_dir>" so raylib.h is
+## found by gcc when compiling the importc completeStruct types. The nimble task
+## discovers naylib's path automatically via `find ~/.nimble/pkgs2 -name naylib-*`.
 
 import bddy
 import raddy/backend/raylib_api

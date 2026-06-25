@@ -14,7 +14,11 @@
 ## and guard with `when defined(vita): {.importc: "Rectangle".}` if needed.
 ##
 ## Decoupled-core exception: backend/ is allowed to reference platform types.
-## All other src/raddy/ modules MUST NOT import this file.
+## All other src/raddy/ modules MUST NOT import this file. Additionally, do not
+## import this file alongside naylib's raylib.nim in the same compilation unit:
+## Nim treats RColor and naylib's Color as distinct types (type-identity by Nim
+## name, not C layout), so they are not interchangeable at the Nim call boundary
+## even though they are ABI-identical at the C level.
 
 const raylibH = "raylib.h"
 
