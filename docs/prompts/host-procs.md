@@ -22,7 +22,9 @@ All called via raddy's adapter, never directly:
 proc rDrawRectangleRec(rect: RRect, color: RColor)
 proc rDrawRectangleLinesEx(rect: RRect, thick: float32, color: RColor)
 proc rDrawRectangleRounded(rect: RRect, roundness: float32, segs: int32, color: RColor)
-proc rDrawRectangleRoundedLines(rect: RRect, roundness: float32, segs: int32, thick: float32, color: RColor)
+proc rDrawRectangleRoundedLinesEx(rect: RRect, roundness: float32, segs: int32, thick: float32, color: RColor)
+  ## C name: DrawRectangleRoundedLinesEx (with thickness — use this; DrawRectangleRoundedLines
+  ## exists but lacks the thickness param and is not used by Nuklear's command renderer)
 proc rDrawRectangleGradientEx(rect: RRect, c1, c2, c3, c4: RColor)
 proc rDrawLineEx(start, `end`: RVec2, thick: float32, color: RColor)
 proc rDrawLineStrip(pts: ptr RVec2, count: int32, color: RColor)
