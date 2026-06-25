@@ -176,6 +176,10 @@ fi
 
 echo "==> verify: test_smoke_headless (demo UI, 5 frames, -d:raddyFixed)"
 BDDY_DIR_SMOKE=$(find "$HOME/.nimble/pkgs2" -maxdepth 1 -name 'bddy-*' -type d | head -1)
+if [[ -z "$BDDY_DIR_SMOKE" ]]; then
+  echo "    ERROR: bddy not found in ~/.nimble/pkgs2 — run: nimble install bddy" >&2
+  exit 1
+fi
 nim c --mm:orc --hints:off --path:src --path:"$BDDY_DIR_SMOKE" \
   -d:raddyFixed \
   -r tests/test_smoke_headless.nim
