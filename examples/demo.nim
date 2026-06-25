@@ -69,7 +69,7 @@ proc buildUI(ctx: ptr nk_context) =
               NK_WINDOW_MOVABLE.nk_flags or
               NK_WINDOW_SCALABLE.nk_flags or
               NK_WINDOW_TITLE.nk_flags
-  let bounds = nk_rect(x: 20, y: 20, w: 400, h: 540)
+  let bounds = nk_rect(x: 20, y: 20, w: 400, h: 600)
 
   if not raddyBegin(ctx, "raddy demo", bounds, flags):
     raddyEnd(ctx)   # always pair Begin with End, even on false
