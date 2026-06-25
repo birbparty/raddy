@@ -193,18 +193,76 @@ spec "raddySlider":
 
 spec "raddyProperty":
 
-  it "does not change val without input":
+  it "does not change val without input and returns false":
     var buf: array[RaddyCmdBufBytes, byte]
     var (ctx, _) = freshCtx(buf)
     raddyInputBegin(addr ctx)
     raddyInputEnd(addr ctx)
     var val: float32 = 5.0
     discard raddyBegin(addr ctx, "w", windowBounds(), 0)
-    raddyProperty(addr ctx, "#volume", 0.0, val, 10.0, 1.0)
+    let changed = raddyProperty(addr ctx, "#volume", 0.0, val, 10.0, 1.0)
     raddyEnd(addr ctx)
     raddyCtxFree(addr ctx)
     verify:
       val == 5.0
+      not changed
+
+spec "raddyCombo edge cases":
+
+  it "empty items returns selected unchanged without crash":
+    var buf: array[RaddyCmdBufBytes, byte]
+    var (ctx, _) = freshCtx(buf)
+    raddyInputBegin(addr ctx)
+    raddyInputEnd(addr ctx)
+    discard raddyBegin(addr ctx, "w", windowBounds(), 0)
+    let sz = nk_vec2(x: 200, y: 100)
+    let ret = raddyCombo(addr ctx, [], 42, 20, sz)
+    raddyEnd(addr ctx)
+    raddyCtxFree(addr ctx)
+    verify:
+      ret == 42
+
+  it "out-of-range selected is clamped to valid index":
+    var buf: array[RaddyCmdBufBytes, byte]
+    var (ctx, _) = freshCtx(buf)
+    raddyInputBegin(addr ctx)
+    raddyInputEnd(addr ctx)
+    discard raddyBegin(addr ctx, "w", windowBounds(), 0)
+    let sz = nk_vec2(x: 200, y: 100)
+    let items = ["A", "B", "C"]
+    let ret = raddyCombo(addr ctx, items, 99, 20, sz)
+    raddyEnd(addr ctx)
+    raddyCtxFree(addr ctx)
+    verify:
+      ret >= 0 and ret <= 2  ## clamped; returns a valid index
+
+spec "raddyEdit capacity":
+
+  it "accepts empty buf and does not crash":
+    var buf: array[RaddyCmdBufBytes, byte]
+    var (ctx, _) = freshCtx(buf)
+    raddyInputBegin(addr ctx)
+    raddyInputEnd(addr ctx)
+    var s = ""
+    discard raddyBegin(addr ctx, "w", windowBounds(), 0)
+    let ev = raddyEdit(addr ctx, NK_EDIT_FIELD_FLAGS, s, 64)
+    raddyEnd(addr ctx)
+    raddyCtxFree(addr ctx)
+    verify:
+      s.len <= 64
+
+  it "truncates pre-populated buf longer than maxLen":
+    var buf: array[RaddyCmdBufBytes, byte]
+    var (ctx, _) = freshCtx(buf)
+    raddyInputBegin(addr ctx)
+    raddyInputEnd(addr ctx)
+    var s = "Hello World This Is Longer"  ## 26 chars
+    discard raddyBegin(addr ctx, "w", windowBounds(), 0)
+    let ev = raddyEdit(addr ctx, NK_EDIT_FIELD_FLAGS, s, 8)
+    raddyEnd(addr ctx)
+    raddyCtxFree(addr ctx)
+    verify:
+      s.len <= 8  ## truncated to maxLen
 
 spec "nkFilter accessors":
 

@@ -66,8 +66,10 @@ type
 # ---------------------------------------------------------------------------
 
 type NkPluginFilter* = proc(edit: pointer; unicode: nk_rune): nk_bool {.cdecl.}
-  ## Text-input filter callback. Pass nil to accept any character.
-  ## Use the nkFilter* procs below for the built-in Nuklear filters.
+  ## Text-input filter callback. `edit` is an OPAQUE `const nk_text_edit*` —
+  ## do NOT dereference or write through it. Custom filters should decide based
+  ## on `unicode` alone. Prefer the built-in nkFilter* accessors.
+  ## Pass nil to accept any character (Nuklear substitutes nk_filter_default).
 
 # ---------------------------------------------------------------------------
 # Raw C FFI bindings (private)
@@ -103,7 +105,7 @@ proc nk_combo(ctx: ptr nk_context; items: ptr cstring; count: cint;
 
 proc nk_property_float(ctx: ptr nk_context; name: cstring; minVal: float32;
                         val: ptr float32; maxVal: float32; step: float32;
-                        incPerPixel: float32)
+                        incPerPixel: float32): nk_bool
     {.importc: "nk_property_float", header: nkH, sideEffect.}
 
 # Built-in filter procs — cdecl, match NkPluginFilter signature
@@ -121,10 +123,10 @@ proc nk_filter_decimal(edit: pointer; unicode: nk_rune): nk_bool
 # ---------------------------------------------------------------------------
 
 const
-  NK_EDIT_SIMPLE_FLAGS*: nk_flags = 1 shl 9          ## NK_EDIT_ALWAYS_INSERT_MODE
-  NK_EDIT_FIELD_FLAGS*: nk_flags  = (1 shl 9) or     ## NK_EDIT_SIMPLE | SELECTABLE | CLIPBOARD
-                                     (1 shl 5) or
-                                     (1 shl 6)
+  NK_EDIT_SIMPLE_FLAGS*: nk_flags = NK_EDIT_ALWAYS_INSERT_MODE.nk_flags
+  NK_EDIT_FIELD_FLAGS*: nk_flags  = NK_EDIT_ALWAYS_INSERT_MODE.nk_flags or
+                                     NK_EDIT_SELECTABLE.nk_flags or
+                                     NK_EDIT_CLIPBOARD.nk_flags
 
 # ---------------------------------------------------------------------------
 # Public filter proc accessors (avoid exposing raw pointer equality)
@@ -182,35 +184,44 @@ proc raddyEdit*(ctx: ptr nk_context; flags: nk_flags; buf: var string;
                 maxLen: int; filter: NkPluginFilter = nil): nk_flags {.inline, raises: [].} =
   ## Draw a text-edit field. `buf` is modified in-place.
   ## `flags` is typically NK_EDIT_FIELD_FLAGS.
-  ## `maxLen` is the maximum number of characters (capacity of `buf`).
-  ## `filter` limits input characters; nil accepts all.
+  ## `maxLen` = maximum editable character count. One extra byte is allocated
+  ## internally as Nuklear's NUL terminator (Nuklear uses `max-1` usable chars).
+  ## Input longer than `maxLen` is silently truncated on return.
+  ## `filter` limits input characters; nil accepts any character.
   ## Returns a bitmask of NkEditEvents (NK_EDIT_COMMITTED etc.).
-  var length = cint(buf.len)
-  if buf.len < maxLen:
-    buf.setLen(maxLen)
-  let events = nk_edit_string(ctx, flags, buf.cstring, addr length,
-                               maxLen.cint, filter)
+  let cap = maxLen + 1            # +1 so exactly maxLen chars actually fit
+  var length = cint(min(buf.len, maxLen))
+  if buf.len < cap:
+    buf.setLen(cap)               # setLen guarantees cap+1 allocated bytes (hidden NUL);
+                                  # Nuklear writes up to max-1 chars + NUL, stays in bounds
+  let events = nk_edit_string(ctx, flags, buf.cstring, addr length, cap.cint, filter)
   buf.setLen(max(0, int(length)))
   events
 
 proc raddyCombo*(ctx: ptr nk_context; items: openArray[string]; selected: int;
                  itemHeight: int; size: nk_vec2): int {.inline, raises: [].} =
   ## Draw a dropdown combo box. Returns the index of the selected item.
-  ## `items` is a fixed array of option strings.
+  ## `items` is the option list; `selected` is clamped to a valid index.
+  ## Returns `selected` unchanged (clamped) when `items` is empty.
   ## `itemHeight` is the height of each item row in pixels.
   ## `size` is the width/height of the popup panel.
+  ## Note: allocates a seq[cstring] on every call — avoid in tight per-frame loops.
+  if items.len == 0:
+    return selected
+  let sel = clamp(selected, 0, items.len - 1)
   var cstrs = newSeq[cstring](items.len)
   for i, s in items:
     cstrs[i] = s.cstring
   int(nk_combo(ctx, cast[ptr cstring](addr cstrs[0]), cstrs.len.cint,
-               selected.cint, itemHeight.cint, size))
+               sel.cint, itemHeight.cint, size))
 
 proc raddyProperty*(ctx: ptr nk_context; name: string; minVal: float32;
                     val: var float32; maxVal: float32; step: float32;
-                    incPerPixel: float32 = 1.0) {.inline, raises: [].} =
+                    incPerPixel: float32 = 1.0): bool {.inline, raises: [].} =
   ## Draw a numeric property widget with +/- drag buttons.
+  ## Returns true if the value changed this frame.
   ## `name` is the label shown next to the widget.
   ## `incPerPixel` controls how much the value changes per dragged pixel.
-  nk_property_float(ctx, name.cstring, minVal, addr val, maxVal, step, incPerPixel)
+  bool(nk_property_float(ctx, name.cstring, minVal, addr val, maxVal, step, incPerPixel))
 
 {.pop.}
