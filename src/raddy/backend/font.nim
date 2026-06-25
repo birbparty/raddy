@@ -25,6 +25,12 @@ const RaddyMeasureSpacing* = 2.0f32
   ## same value or glyph positions will not match layout measurements.
   ## render.nim must import and pass this constant — do not duplicate the literal.
 
+const RaddyMaxTextBytes* = 1024
+  ## Shared stack-buffer size for NK text payloads. Used by both raddyMeasureWidth
+  ## (font.nim) and the NK_COMMAND_TEXT handler (render.nim) so that the measure and
+  ## draw paths always agree on the truncation point. Do not duplicate the 1024
+  ## literal in either file — change it here if a larger cap is ever needed.
+
 # ---------------------------------------------------------------------------
 # C import: MeasureTextEx
 # ---------------------------------------------------------------------------
@@ -58,9 +64,8 @@ proc raddyMeasureWidth*(handle: nk_handle; h: float32; text: cstring; len: cint)
   if h <= 0.0f32 or h != h: return 0.0f32
   let fontPtr = cast[ptr RFont](handle.`ptr`)
   if fontPtr == nil: return 0.0f32
-  const BufMax = 1024
-  var buf: array[BufMax, char]
-  let copyLen = min(int(len), BufMax - 1)
+  var buf: array[RaddyMaxTextBytes, char]
+  let copyLen = min(int(len), RaddyMaxTextBytes - 1)
   copyMem(addr buf[0], text, copyLen)
   buf[copyLen] = '\0'
   let measured = measureTextEx(fontPtr[], cast[cstring](addr buf[0]), h, RaddyMeasureSpacing)
