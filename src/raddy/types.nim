@@ -90,12 +90,16 @@ type
 # ---------------------------------------------------------------------------
 
 type
-  ## nk_buffer: PARTIAL VIEW — only allocated/size exposed for overflow detection.
-  ## ctx.memory.allocated >= ctx.memory.size → command buffer is full.
+  ## nk_buffer: PARTIAL VIEW — allocated/needed/size exposed for overflow detection.
+  ## Overflow check: ctx.memory.needed > ctx.memory.size (NOT allocated >= size).
+  ## Why: on NK_BUFFER_FIXED, nk_buffer_alloc advances `needed` BEFORE the full check
+  ## then returns 0 without advancing `allocated`. So allocated stays below size even
+  ## when commands were dropped; needed exceeds size.
   ## Do NOT sizeof, construct-by-value, or copyMem this type from Nim;
   ## sizeof is deferred to C (correct 120-byte struct via nuklear.h).
   nk_buffer* {.importc: "struct nk_buffer", header: nkH.} = object
-    allocated*: nk_size  ## bytes consumed so far this frame
+    allocated*: nk_size  ## bytes successfully committed this frame
+    needed*:    nk_size  ## bytes requested (including dropped on overflow)
     size*:      nk_size  ## total capacity
 
   ## nk_input: opaque; passed by pointer to nk_input_* procs only.

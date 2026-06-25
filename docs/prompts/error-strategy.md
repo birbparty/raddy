@@ -45,7 +45,9 @@ On desktop, `nk_init_default` is used instead (heap-backed, unlimited). The fixe
 
 ## Buffer Overflow Detection
 
-Nuklear silently drops commands when `nk_init_fixed` buffer is full. Detect by checking `ctx.memory.allocated >= ctx.memory.size` after the UI build phase.
+Nuklear silently drops commands when `nk_init_fixed` buffer is full. Detect by checking `ctx.memory.needed > ctx.memory.size` after the UI build phase.
+
+**Important**: the correct predicate is `needed > size`, NOT `allocated >= size`. In `nk_buffer_alloc`, the `needed` counter is incremented before the full-buffer check; on overflow the function returns 0 without advancing `allocated`. So `allocated` stays below `size` even when commands were dropped. Bind `nk_buffer.needed: nk_size` in types.nim to access it.
 
 **Binding requirement.** This check requires `nk_buffer` to be imported in `src/raddy/types.nim`
 with at minimum the `allocated` and `size` fields bound as `nk_size`. The `nk_context.memory`

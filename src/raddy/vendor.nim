@@ -6,5 +6,6 @@ import std/os
 
 const vendorDir = currentSourcePath().parentDir() / "vendor"
 
+{.passC: "-I\"" & vendorDir & "\"".}
 {.passC: "-include \"" & vendorDir & "/nk_config.h\"".}
 {.compile: vendorDir & "/nuklear_impl.c".}
