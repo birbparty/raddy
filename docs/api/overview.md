@@ -25,6 +25,21 @@ Backend modules must be imported explicitly by the application. They are never p
 | `raddy/backend/pump_naylib` | Optional desktop input pump. `raddyNaylibPump(ctx)` reads mouse, keyboard, and scroll state from naylib and feeds it to Nuklear's input pipeline. Import only on desktop builds. |
 | `raddy/backend/pump_vita` | Optional PS Vita gamepad input pump. Reads DualShock 4 / Vita controller state and maps buttons to Nuklear input events. Import only on Vita builds. |
 
+## Clipboard (text-edit copy/paste)
+
+`raddyEdit` wires Ctrl+C, Ctrl+X, and Ctrl+V to Nuklear's key events via the input pump. The underlying clipboard *data* flow (reading/writing the OS clipboard) requires explicit setup:
+
+| Platform | Setup |
+|---|---|
+| Desktop | Call `raddyWireClipboard(ctx)` once after `raddyBundleCreate`. It sets `ctx.clip.copy`/`ctx.clip.paste` to handlers that call `GetClipboardText`/`SetClipboardText` from the raylib C API. |
+| PS Vita | No setup needed. `raddyVitaPump` does not feed `NK_KEY_COPY/PASTE`, and Nuklear guards every clipboard invocation with `if (clip.copy)` / `if (clip.paste)` — nil handlers are a safe no-op. |
+
+**Copy**: copies up to 4096 bytes of selected text to the OS clipboard (larger selections are silently truncated).
+
+**Paste**: reads UTF-8 from the OS clipboard via `GetClipboardText` and passes the raw byte string directly to `nk_textedit_paste` in a single call. Nuklear replaces any active selection and records the undo entry atomically. No per-rune decoding in Nim — Nuklear handles UTF-8 byte strings natively.
+
+`raddyWireClipboard` is declared in `raddy/backend/pump_naylib` — import it alongside the pump.
+
 ## Decoupled-core rule
 
 `import raddy` is backend-free. It compiles with zero naylib or raylib_console symbols in scope. This is not a convention — it is enforced by `tests/test_import_purity.nim`, which confirms that a bare `import raddy` produces no naylib/raylib link symbols.

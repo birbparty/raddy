@@ -167,6 +167,7 @@ proc main() =
 
   let bundle = raddyBundleCreate(cast[ptr RFont](addr gFont), fontPx)
   let ctx = raddyBundleCtx(bundle)
+  raddyWireClipboard(ctx)  # enable Ctrl+C/X/V in text-edit fields
 
   # Render into a RenderTexture so raddyRender's scissor Y-flip is correct.
   # (raylib FBOs use bottom-up OpenGL coordinates; screen drawing is top-down.)
