@@ -54,6 +54,7 @@ var checkA     = false
 var checkB     = true
 var sliderVal  = 50.0f
 var editBuf    = "Hello, raddy!"
+var comboSel   = 0
 
 proc buildDemoUI(ctx: ptr nk_context) =
   ## Replicate examples/demo.nim buildUI — same widget sequence, same flags.
@@ -62,7 +63,7 @@ proc buildDemoUI(ctx: ptr nk_context) =
               NK_WINDOW_MOVABLE.nk_flags or
               NK_WINDOW_SCALABLE.nk_flags or
               NK_WINDOW_TITLE.nk_flags
-  let bounds = nk_rect(x: 20, y: 20, w: 400, h: 540)
+  let bounds = nk_rect(x: 20, y: 20, w: 400, h: 600)
 
   if not raddyBegin(ctx, "demo smoke", bounds, flags):
     raddyEnd(ctx)
@@ -119,6 +120,20 @@ proc buildDemoUI(ctx: ptr nk_context) =
     for i in 1..12:
       raddyLabel(ctx, "Group item " & $i)
     raddyGroupEnd(ctx)
+
+  # ---- Combo (collapsed path) -----------------------------------------------
+  # Exercises the collapsed-header command path: RECT_FILLED (background),
+  # RECT (border), TEXT (label), TRIANGLE_FILLED (arrow symbol).
+  # Without synthetic mouse input the dropdown popup never opens, so the
+  # nk_null_rect scissor region (popup overlay) is NOT emitted here.
+  # The open-dropdown path (nk_null_rect scissor) is documented in
+  # docs/command-coverage.md and validated via scissor.nim's static assertions.
+  raddyLayoutRowDynamic(ctx, height = 8, cols = 1)
+  raddySpacing(ctx, 1)
+  raddyLayoutRowDynamic(ctx, height = 25, cols = 1)
+  const comboItems = ["Alpha", "Beta", "Gamma"]
+  comboSel = raddyCombo(ctx, comboItems, comboSel,
+                        itemHeight = 25, size = nk_vec2(x: 200, y: 120))
 
   raddyEnd(ctx)
 

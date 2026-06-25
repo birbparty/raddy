@@ -46,6 +46,30 @@ while cmd != nil:
 | NK_COMMAND_IMAGE | best-effort | Uses RTexture/RColor type aliases. Caller must embed the texture pointer in the nk_image handle. |
 | NK_COMMAND_CUSTOM | logged no-op | Logs a warning once per context, then silently skips. Does not crash. |
 
+## Popup / combo / tooltip scissor model
+
+Combo dropdowns, `nk_popup`, and tooltips emit **no special command type** — their output is the same 19-element set as any other widget (RECT, RECT_FILLED, TEXT, TRIANGLE_FILLED, SCISSOR, etc.). There is no `NK_COMMAND_POPUP` or `NK_COMMAND_COMBO`. All 19 types are already handled by `raddyRender`.
+
+### Scissor semantics for popups
+
+Nuklear uses a **flat, replace-not-nest** scissor model, which is exactly what raddy implements:
+
+- **Collapsed combo / closed popup**: emits normal per-window scissor rects. Standard path.
+- **Open combo dropdown / open popup**: Nuklear pushes `nk_null_rect = {x:-8192, y:-8192, w:16384, h:16384}` so the dropdown can draw outside the parent window's bounds. Nuklear's `nk_push_scissor` applies `NK_MAX(0, w)` / `NK_MAX(0, h)`, so w/h are always non-negative. After the Y-flip (`y' = H - y - h = H - (-8192) - 16384 = H + 8192 - 16384 = H - 8192`), the result is `{x:-8192, y:H-8192, w:16384, h:16384}` — a huge rect with large-negative x and y. OpenGL's `glScissor` (called via `BeginScissorMode → rlScissor → glScissor`) intersects this with the viewport at the driver level; the popup is visible everywhere on screen. On close, Nuklear restores the parent's clip rect with another SCISSOR command. The Y-flip math is verified by static assertions in `src/raddy/backend/scissor.nim`.
+- There is **no intersecting/nesting** of scissor regions in Nuklear's command-queue path. Each `NK_COMMAND_SCISSOR` is an absolute replacement. `raddyRender`'s `EndScissorMode` + `BeginScissorMode` pattern is exactly right.
+
+The `nk_null_rect` → `scissorYFlip` math is covered by static assertions in `src/raddy/backend/scissor.nim`.
+
+### v1 scope
+
+| Feature | Status | Notes |
+|---|---|---|
+| Combo header (collapsed) | **validated** | Covered by `examples/demo.nim` and `tests/test_smoke_headless.nim` |
+| Scissor replace semantics | **validated** | Static assertions in `scissor.nim`, including the `nk_null_rect` case |
+| Open combo dropdown | **in scope but headless-only** | Open-popup path requires synthetic mouse input across frames; not in smoke test. Visual sign-off deferred to human QA (raddy-bdz). |
+| `nk_popup_begin` / `nk_popup_end` | **not wrapped** | No `raddyPopupBegin/End` proc exists in v1. Out of scope; document if needed. |
+| Tooltips (`nk_tooltip`) | **not wrapped** | No `raddyTooltip` proc in v1. Out of scope. |
+
 ## Provisional items
 
 The following commands are implemented but carry PROVISIONAL notes:

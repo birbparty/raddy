@@ -28,3 +28,16 @@ static:
   ## Bottom rect: y=H-h, h → y'=0
   let (_, ry4, _, _) = scissorYFlip(0, 430, 100, 50, 480)
   doAssert ry4 == 0, "bottom rect → y'=0"
+
+  ## nk_null_rect case: Nuklear uses {x:-8192,y:-8192,w:16384,h:16384} for popup
+  ## overlays ("disable clipping so the popup can draw outside parent bounds").
+  ## Nuklear's nk_push_scissor applies NK_MAX(0, w) / NK_MAX(0, h), so w and h are
+  ## always non-negative. x and y may be large and negative; OpenGL's glScissor
+  ## (called via BeginScissorMode → rlScissor → glScissor) intersects the scissor
+  ## rect with the viewport at the driver level — the popup is visible everywhere.
+  ## Formula: y' = H - y - h = 600 - (-8192) - 16384 = 600 + 8192 - 16384 = -7592
+  let (nx, ny5, nw, nh) = scissorYFlip(-8192, -8192, 16384, 16384, 600)
+  doAssert nx  == -8192,          "null-rect: x passes through unchanged"
+  doAssert ny5 == -7592,          "null-rect: y' = 600 + 8192 - 16384 = -7592"
+  doAssert nw  == 16384,          "null-rect: w passes through unchanged"
+  doAssert nh  == 16384,          "null-rect: h passes through unchanged"
