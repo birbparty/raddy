@@ -8,13 +8,15 @@
 ##   types   — nk_context, nk_bool, nk_color, nk_rect, nk_vec2, nk_flags …
 ##   errors  — RaddyCmdBufBytes, raddyLog
 ##   context — raddyCtxInit, raddyCtxFree, raddyCtxClear
-##   style   — raddyStyleDefault, raddyStyleColor, nk_color helpers
+##   style   — raddyStyleDefault, raddyStyleFromTable, raddyColorName
 ##   input   — raddyInputBegin/End, raddyInputMotion/Button/Key/Scroll/Unicode
-##   layout  — raddyLayoutRow*, raddyGroupBegin/End, raddySpacing, NkWindowFlags
+##   layout  — raddyLayoutRowDynamic/Static/Begin/Push/End, NkWindowFlags,
+##             raddyGroupBegin/End, raddySpacing
 ##   widgets — raddyBegin/End, raddyLabel, raddyButton, raddyCheckbox,
 ##             raddySlider, raddyEdit, raddyCombo, raddyProperty
 ##
-## Backend (rendering + context bundle):
+## Backend modules (import explicitly — kept separate so `import raddy` is
+## backend-free and usable on Vita without desktop rendering plumbing):
 ##   import raddy/backend/ctx_bundle   — RaddyCtxBundle lifecycle helper
 ##   import raddy/backend/render       — raddyRender (Nuklear → raylib draw calls)
 ##   import raddy/backend/pump_naylib  — optional desktop naylib input pump
