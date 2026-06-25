@@ -15,11 +15,11 @@ raddyEnd(ctx)
 ```
 
 **Groups (`raddyGroupBegin`/`raddyGroupEnd`):**
-`raddyGroupEnd` must **only** be called when `raddyGroupBegin` returns `true`. Groups behave differently from windows in this respect — calling `raddyGroupEnd` on a collapsed group corrupts context state.
+`raddyGroupEnd` must **only** be called when `raddyGroupBegin` returns `true`. Groups behave differently from windows in this respect — calling `raddyGroupEnd` on a non-visible group corrupts context state.
 
 ```nim
 # Correct pattern
-if raddyGroupBegin(ctx, "panel", flags):
+if raddyGroupBegin(ctx, "panel", NK_WINDOW_BORDER.nk_flags):
   # ... widgets ...
   raddyGroupEnd(ctx)   # only here
 ```
@@ -35,13 +35,12 @@ proc raddyBegin(ctx: ptr nk_context; title: string; bounds: nk_rect;
                 flags: nk_flags): bool
 ```
 
-Opens a Nuklear window. Returns `true` if the window is open and should be populated with widgets. `flags` is a bitfield of `NkWindowFlags` values (e.g. `NK_WINDOW_BORDER`, `NK_WINDOW_TITLE`, `NK_WINDOW_MOVABLE`, `NK_WINDOW_SCALABLE`, `NK_WINDOW_CLOSABLE`).
-
-`raddyEnd` must always follow, regardless of the return value.
+Opens a Nuklear window. Returns `true` if the window is open and should be populated with widgets. `flags` is a bitfield of `NkWindowFlags` values combined with `or`:
 
 ```nim
-let flags = NK_WINDOW_BORDER.nk_flags or NK_WINDOW_TITLE.nk_flags or NK_WINDOW_MOVABLE.nk_flags
-if not raddyBegin(ctx, "Settings", nk_rect(x:50, y:50, w:300, h:400), flags):
+let flags = NK_WINDOW_BORDER.nk_flags or NK_WINDOW_TITLE.nk_flags or
+            NK_WINDOW_MOVABLE.nk_flags or NK_WINDOW_SCALABLE.nk_flags
+if not raddyBegin(ctx, "Settings", nk_rect(x: 50, y: 50, w: 300, h: 400), flags):
   raddyEnd(ctx); return
 # widgets go here
 raddyEnd(ctx)
@@ -59,52 +58,52 @@ Closes a window opened with `raddyBegin`. Must be called unconditionally after e
 
 ## Layout procs
 
-Layout must be set before adding widgets to a row. A new layout call is required for each row (or reused across rows when using `raddyLayoutRowBegin`).
+Layout must be set before adding widgets to a row.
 
 ### raddyLayoutRowDynamic
 
 ```nim
-proc raddyLayoutRowDynamic(ctx: ptr nk_context; height: float32; cols: int32)
+proc raddyLayoutRowDynamic(ctx: ptr nk_context; height: float32; cols: int)
 ```
 
-Divides the available row width equally among `cols` columns. `height` is in pixels. Most common layout for forms and toolbars.
+Divides the available row width equally among `cols` columns. `height` is in pixels (pass `0` for natural height).
 
 ```nim
-raddyLayoutRowDynamic(ctx, height=30, cols=2)
+raddyLayoutRowDynamic(ctx, height = 30, cols = 2)
 raddyLabel(ctx, "Name:", NK_TEXT_LEFT)
-raddyEdit(ctx, NK_EDIT_FIELD, nameBuffer, maxLen)
+raddyEdit(ctx, NK_EDIT_FIELD_FLAGS, nameBuf, maxLen = 64)
 ```
 
 ### raddyLayoutRowStatic
 
 ```nim
 proc raddyLayoutRowStatic(ctx: ptr nk_context; height: float32;
-                           itemWidth: int32; cols: int32)
+                           itemWidth: int; cols: int)
 ```
 
-Each column has a fixed pixel width of `itemWidth`. Useful when columns must not resize.
+Each column has a fixed pixel width of `itemWidth`.
 
 ```nim
-raddyLayoutRowStatic(ctx, height=25, itemWidth=80, cols=3)
+raddyLayoutRowStatic(ctx, height = 25, itemWidth = 80, cols = 3)
 ```
 
 ### raddyLayoutRowBegin / Push / End
 
 ```nim
-proc raddyLayoutRowBegin(ctx: ptr nk_context; fmt: nk_layout_format;
-                          rowHeight: float32; cols: int32)
+proc raddyLayoutRowBegin(ctx: ptr nk_context; fmt: NkLayoutFormat;
+                          rowHeight: float32; cols: int)
 proc raddyLayoutRowPush(ctx: ptr nk_context; value: float32)
 proc raddyLayoutRowEnd(ctx: ptr nk_context)
 ```
 
-Manual per-column sizing. `fmt` is `NK_STATIC` (pixels) or `NK_DYNAMIC` (ratio 0.0–1.0). Call `raddyLayoutRowPush` once per column before the corresponding widget.
+Manual per-column sizing. `fmt` is `NK_STATIC` (pixel widths) or `NK_DYNAMIC` (ratios 0.0–1.0). Call `raddyLayoutRowPush` once per column before the corresponding widget, then `raddyLayoutRowEnd` to close the row.
 
 ```nim
-raddyLayoutRowBegin(ctx, NK_STATIC, rowHeight=30, cols=2)
+raddyLayoutRowBegin(ctx, NK_STATIC, rowHeight = 30, cols = 2)
 raddyLayoutRowPush(ctx, 120)   # label column: 120px
 raddyLabel(ctx, "Volume", NK_TEXT_LEFT)
 raddyLayoutRowPush(ctx, 180)   # slider column: 180px
-raddySlider(ctx, min=0, val=addr volume, max=100, step=1)
+raddySlider(ctx, minVal = 0, val = volume, maxVal = 100, step = 1)
 raddyLayoutRowEnd(ctx)
 ```
 
@@ -124,12 +123,10 @@ Draws a static text label. `align` is one of `NK_TEXT_LEFT`, `NK_TEXT_CENTERED`,
 raddyLabel(ctx, "Hello, world!", NK_TEXT_LEFT)
 ```
 
-**Returns:** nothing.
-
 ### raddyButton
 
 ```nim
-proc raddyButton(ctx: ptr nk_context; title: string): bool
+proc raddyButton(ctx: ptr nk_context; label: string): bool
 ```
 
 Draws a push button. Returns `true` on the frame the button is clicked.
@@ -139,106 +136,99 @@ if raddyButton(ctx, "Apply"):
   applySettings()
 ```
 
-**Returns:** `true` when clicked (single frame).
-
 ### raddyCheckbox
 
 ```nim
 proc raddyCheckbox(ctx: ptr nk_context; label: string;
-                   active: ptr nk_bool): bool
+                   active: var bool): bool
 ```
 
-Draws a labeled checkbox. `active` is the current checked state; Nuklear writes the new state back through the pointer each frame. Returns `true` when the value changes.
+Draws a labeled checkbox. `active` is read and written each frame (Nuklear updates it through the `var` reference). Returns `true` when the value changes.
 
 ```nim
-var showGrid: nk_bool = nk_false
+var showGrid = false
 # in frame loop:
-discard raddyCheckbox(ctx, "Show grid", addr showGrid)
+discard raddyCheckbox(ctx, "Show grid", showGrid)
 ```
-
-**Returns:** `true` if the checkbox state changed this frame.
 
 ### raddySlider
 
 ```nim
-proc raddySlider(ctx: ptr nk_context; min: float32; val: ptr float32;
-                 max: float32; step: float32): bool
+proc raddySlider(ctx: ptr nk_context; minVal: float32; val: var float32;
+                 maxVal: float32; step: float32): bool
 ```
 
 Draws a horizontal slider. `val` is read and written each frame. Returns `true` when the value changes.
 
 ```nim
-var brightness: float32 = 0.8
-discard raddySlider(ctx, min=0.0, val=addr brightness, max=1.0, step=0.05)
+var brightness = 0.8f
+discard raddySlider(ctx, minVal = 0.0f, val = brightness, maxVal = 1.0f, step = 0.05f)
 ```
-
-**Returns:** `true` if the value changed this frame.
 
 ### raddyEdit
 
 ```nim
-proc raddyEdit(ctx: ptr nk_context; flags: nk_flags;
-               buffer: ptr char; len: ptr int32;
-               maxLen: int32): nk_flags
+proc raddyEdit(ctx: ptr nk_context; flags: nk_flags; buf: var string;
+               maxLen: int; filter: NkPluginFilter = nil): nk_flags
 ```
 
-Draws a single-line or multi-line text editor. `flags` controls mode (e.g. `NK_EDIT_FIELD` for single-line, `NK_EDIT_BOX` for multi-line). `buffer` is a fixed-size char array; `len` tracks current length; `maxLen` is the buffer capacity.
+Draws a text editor. `buf` is a Nim `string` that Nuklear reads and writes directly. `maxLen` is the maximum number of editable characters (one extra byte is reserved internally for Nuklear's NUL terminator). `filter` restricts which characters are accepted; `nil` accepts any character.
+
+`flags` is typically `NK_EDIT_FIELD_FLAGS` for a single-line field or `NK_EDIT_BOX_FLAGS` for multi-line.
 
 ```nim
-var inputBuf: array[256, char]
-var inputLen: int32 = 0
-discard raddyEdit(ctx, NK_EDIT_FIELD, addr inputBuf[0], addr inputLen, 256)
+var inputBuf = "Hello!"
+discard raddyEdit(ctx, NK_EDIT_FIELD_FLAGS, inputBuf, maxLen = 127)
 ```
 
-**Returns:** `nk_flags` bitmask indicating edit state (active, committed, etc.).
+Returns a bitmask of `NkEditEvents` (e.g. `NK_EDIT_COMMITTED` when the user presses Enter).
 
 ### raddyCombo
 
 ```nim
-proc raddyCombo(ctx: ptr nk_context; items: openArray[string];
-                selected: int32; itemHeight: int32;
-                size: nk_vec2): int32
+proc raddyCombo(ctx: ptr nk_context; items: openArray[string]; selected: int;
+                itemHeight: int; size: nk_vec2): int
 ```
 
-Draws a drop-down combo box. `selected` is the currently active index. `size` is the popup dimensions. Returns the newly selected index (may equal `selected` if unchanged).
+Draws a drop-down combo box. `selected` is the currently active index. `size` is the popup panel dimensions. Returns the newly selected index (may equal `selected` if unchanged).
+
+Note: allocates a `seq[cstring]` on every call — avoid in tight inner loops.
 
 ```nim
 const modes = ["Windowed", "Fullscreen", "Borderless"]
-var modeIdx: int32 = 0
-modeIdx = raddyCombo(ctx, modes, modeIdx, itemHeight=25,
-                     size=nk_vec2(x:200, y:100))
+var modeIdx = 0
+modeIdx = raddyCombo(ctx, modes, modeIdx, itemHeight = 25,
+                     size = nk_vec2(x: 200, y: 100))
 ```
-
-**Returns:** index of the selected item.
 
 ### raddyProperty
 
 ```nim
-proc raddyProperty(ctx: ptr nk_context; name: string;
-                   min: float64; val: ptr float64; max: float64;
-                   step: float64; incPerPixel: float32)
+proc raddyProperty(ctx: ptr nk_context; name: string; minVal: float32;
+                   val: var float32; maxVal: float32; step: float32;
+                   incPerPixel: float32 = 1.0): bool
 ```
 
-Draws a labeled numeric property (drag-to-edit or click-to-type). `name` is displayed as-is; prefix with `#` to hide the label but keep it as an ID. `incPerPixel` controls drag sensitivity.
+Draws a labeled numeric property (drag-to-edit or click-to-type). `val` is read and written each frame. `incPerPixel` controls drag sensitivity. Prefix `name` with `#` to hide the label while keeping it as a unique ID.
+
+Returns `true` if the value changed this frame.
 
 ```nim
-var mass: float64 = 1.0
-raddyProperty(ctx, "Mass (kg)", min=0.01, val=addr mass,
-              max=1000.0, step=0.1, incPerPixel=0.5)
+var mass = 1.0f
+discard raddyProperty(ctx, "Mass (kg)", minVal = 0.01f, val = mass,
+                      maxVal = 1000.0f, step = 0.1f, incPerPixel = 0.5f)
 ```
-
-**Returns:** nothing (value written through `val`).
 
 ### raddySpacing
 
 ```nim
-proc raddySpacing(ctx: ptr nk_context; cols: int32)
+proc raddySpacing(ctx: ptr nk_context; cols: int)
 ```
 
 Skips `cols` column slots in the current layout row, inserting blank space.
 
 ```nim
-raddyLayoutRowDynamic(ctx, height=30, cols=3)
+raddyLayoutRowDynamic(ctx, height = 30, cols = 3)
 raddyButton(ctx, "Back")
 raddySpacing(ctx, 1)   # empty middle column
 raddyButton(ctx, "Next")
@@ -248,16 +238,18 @@ raddyButton(ctx, "Next")
 
 ## Group procs
 
-Groups provide scrollable sub-regions within a window. Unlike windows, the close contract is reversed: `raddyGroupEnd` is only called when `raddyGroupBegin` returned `true`.
+Groups provide scrollable sub-regions within a window. Unlike windows, `raddyGroupEnd` is only called when `raddyGroupBegin` returned `true`.
 
 ### raddyGroupBegin
 
 ```nim
 proc raddyGroupBegin(ctx: ptr nk_context; title: string;
-                     flags: nk_flags): bool
+                     flags: nk_flags = 0): bool
 ```
 
-Opens a scrollable group. Returns `true` if the group should be populated. `flags` supports `NK_WINDOW_BORDER`, `NK_WINDOW_TITLE`, `NK_WINDOW_NO_SCROLLBAR`.
+Opens a scrollable group. Returns `true` if the group should be populated. The `title` also serves as the group's unique scroll-state ID within the window — two groups with the same title share scroll state.
+
+`flags` supports `NK_WINDOW_BORDER`, `NK_WINDOW_TITLE`, `NK_WINDOW_NO_SCROLLBAR`.
 
 ### raddyGroupEnd
 
@@ -269,8 +261,8 @@ Closes a group. Call **only** when `raddyGroupBegin` returned `true`.
 
 ```nim
 if raddyGroupBegin(ctx, "Items", NK_WINDOW_BORDER.nk_flags):
+  raddyLayoutRowDynamic(ctx, height = 24, cols = 1)
   for item in itemList:
-    raddyLayoutRowDynamic(ctx, height=24, cols=1)
     raddyLabel(ctx, item, NK_TEXT_LEFT)
   raddyGroupEnd(ctx)
 ```

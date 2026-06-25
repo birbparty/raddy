@@ -6,13 +6,13 @@ All core modules are re-exported by `import raddy`. No backend imports are requi
 
 | Module | Description |
 |---|---|
-| `raddy/core/types` | Fundamental Nuklear types: `nk_context`, `nk_bool`, `nk_color`, `nk_rect`, `nk_vec2`, `nk_flags`, `nk_user_font`, `nk_handle`, `nk_size`, `RaddyCmdBufBytes`. |
-| `raddy/core/errors` | Error reporting. Defines `RaddyCmdBufBytes` (64 KiB fixed buffer size constant) and `raddyLog` for structured diagnostic output. |
-| `raddy/core/context` | Context lifecycle: `raddyCtxInit`, `raddyCtxFree`, `raddyCtxClear`. Wraps `nk_init_default` (heap) or `nk_init_fixed` (fixed, when `-d:raddyFixed` or `-d:vita`). |
-| `raddy/core/style` | Theme management: `raddyStyleDefault`, `raddyStyleFromTable`, `raddyColorName`. |
-| `raddy/core/input` | Input event feed: `raddyInputBegin`/`End`, `raddyInputMotion`, `raddyInputButton`, `raddyInputKey`, `raddyInputScroll`, `raddyInputUnicode`. Must bracket all input calls each frame. |
-| `raddy/core/layout` | Row layout and grouping: `raddyLayoutRowDynamic`/`Static`/`Begin`/`Push`/`End`, `NkWindowFlags`, `raddyGroupBegin`/`End`, `raddySpacing`. |
-| `raddy/core/widgets` | Widget procs: `raddyBegin`/`End`, `raddyLabel`, `raddyButton`, `raddyCheckbox`, `raddySlider`, `raddyEdit`, `raddyCombo`, `raddyProperty`. |
+| `raddy/types` | Fundamental Nuklear types: `nk_context`, `nk_bool`, `nk_color`, `nk_rect`, `nk_vec2`, `nk_flags`, `nk_user_font`, `nk_handle`, `nk_size`, `RaddyCmdBufBytes`. |
+| `raddy/errors` | Error reporting. Defines `RaddyCmdBufBytes` (64 KiB fixed buffer size constant) and `raddyLog` for structured diagnostic output. |
+| `raddy/context` | Context lifecycle: `raddyCtxInit`, `raddyCtxFree`, `raddyCtxClear`. Wraps `nk_init_default` (heap) or `nk_init_fixed` (fixed, when `-d:raddyFixed` or `-d:vita`). |
+| `raddy/style` | Theme management: `raddyStyleDefault`, `raddyStyleFromTable`, `raddyColorName`. |
+| `raddy/input` | Input event feed: `raddyInputBegin`/`End`, `raddyInputMotion`, `raddyInputButton`, `raddyInputKey`, `raddyInputScroll`, `raddyInputUnicode`. Must bracket all input calls each frame. |
+| `raddy/layout` | Row layout and grouping: `raddyLayoutRowDynamic`/`Static`/`Begin`/`Push`/`End`, `NkWindowFlags`, `raddyGroupBegin`/`End`, `raddySpacing`. |
+| `raddy/widgets` | Widget procs: `raddyBegin`/`End`, `raddyLabel`, `raddyButton`, `raddyCheckbox`, `raddySlider`, `raddyEdit`, `raddyCombo`, `raddyProperty`. |
 
 ## Backend modules
 
