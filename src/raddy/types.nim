@@ -86,6 +86,30 @@ type
     width*:    nk_text_width_f ## measure text width; must match DrawTextEx spacing
 
 # ---------------------------------------------------------------------------
+# Clipboard types — used by text-edit widget clipboard hooks
+# ---------------------------------------------------------------------------
+
+type
+  ## Opaque Nuklear text-edit state. Passed by pointer to nk_plugin_paste handlers
+  ## and to nk_textedit_paste. Do not construct or sizeof from Nim.
+  nk_text_edit* {.importc: "struct nk_text_edit", header: nkH.} = object
+
+  ## Called by Nuklear when the user presses Ctrl+C/X over a text selection.
+  ## `text` points to the selected UTF-8 bytes (NOT null-terminated); `len` is
+  ## the byte count. The handler must null-terminate before passing to the OS.
+  nk_plugin_copy* = proc(handle: nk_handle; text: cstring; len: cint) {.cdecl.}
+
+  ## Called by Nuklear when the user presses Ctrl+V in a text-edit field.
+  ## The handler fetches text from the OS clipboard and inserts it via
+  ## nk_textedit_paste (binding in pump_naylib.nim).
+  nk_plugin_paste* = proc(handle: nk_handle; edit: ptr nk_text_edit) {.cdecl.}
+
+  nk_clipboard* {.importc: "struct nk_clipboard", header: nkH.} = object
+    userdata*: nk_handle       ## forwarded to copy/paste handlers
+    paste*:    nk_plugin_paste ## nil = Ctrl+V is a no-op
+    copy*:     nk_plugin_copy  ## nil = Ctrl+C/X is a no-op
+
+# ---------------------------------------------------------------------------
 # Buffer and context — expose only fields required by the overflow check
 # ---------------------------------------------------------------------------
 
@@ -110,8 +134,9 @@ type
   ## field access is by name in generated C (correct), not by Nim-computed offset.
   ## sizeof is deferred to C (correct full 18456-byte struct via nuklear.h).
   nk_context* {.importc: "struct nk_context", header: nkH.} = object
-    input*:  nk_input  ## keyboard + mouse snapshot (fed inside begin/end boundary)
-    memory*: nk_buffer ## command buffer — check .allocated vs .size after UI build
+    input*:  nk_input     ## keyboard + mouse snapshot (fed inside begin/end boundary)
+    memory*: nk_buffer    ## command buffer — check .allocated vs .size after UI build
+    clip*:   nk_clipboard ## text-edit clipboard; wire via raddyWireClipboard (desktop)
 
 # ---------------------------------------------------------------------------
 # Enums
