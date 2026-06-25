@@ -1,0 +1,85 @@
+## font.nim — nk_user_font setup and raddyMeasureWidth cdecl callback.
+##
+## Does NOT pin the Font — lifetime is the caller's responsibility.
+## The callback retrieves the font via handle.ptr (cast to ptr RFont).
+##
+## Critical constraints:
+##   - Width callback MUST NOT allocate, raise, or call raddyLog.
+##   - Nuklear passes a NON-null-terminated char* + len; we copy to a stack
+##     buffer, null-terminate, then call MeasureTextEx.
+##   - spacing = RaddyMeasureSpacing (2.0) — MUST match the spacing literal
+##     passed to rDrawTextEx in render.nim. When render.nim exists, import
+##     this constant from font.nim rather than duplicating 2.0f.
+##   - nk_user_font.userdata.ptr holds a raw ptr RFont set by the CALLER.
+##     font.nim does NOT own or pin the font.
+
+import ../types        ## nk_handle, nk_user_font, nk_text_width_f
+import ./raylib_api    ## RFont, RVec2
+
+# ---------------------------------------------------------------------------
+# Constants
+# ---------------------------------------------------------------------------
+
+const RaddyMeasureSpacing* = 2.0f32
+  ## Text spacing passed to MeasureTextEx and rDrawTextEx. Both must use the
+  ## same value or glyph positions will not match layout measurements.
+  ## render.nim must import and pass this constant — do not duplicate the literal.
+
+# ---------------------------------------------------------------------------
+# C import: MeasureTextEx
+# ---------------------------------------------------------------------------
+
+## RFont is a partial importc view (raylib_api.nim declares only the Nim-facing
+## handle fields). However, passing RFont by value to an importc proc is safe
+## because the C compiler sees the full Font layout via raylib.h at the call
+## site — Nim defers to C for the struct's size and copy semantics when both
+## sides are importc-typed. The "do NOT copy/move from Nim" rule in raylib_api.nim
+## refers to Nim-level operations (sizeof, ARC hooks, Nim-managed arrays) — not
+## importc-to-importc calls where C owns the layout throughout.
+proc measureTextEx(font: RFont; text: cstring; fontSize, spacing: float32): RVec2
+    {.importc: "MeasureTextEx", header: "raylib.h", sideEffect.}
+
+# ---------------------------------------------------------------------------
+# Width callback — registered as nk_user_font.width
+# ---------------------------------------------------------------------------
+
+proc raddyMeasureWidth*(handle: nk_handle; h: float32; text: cstring; len: cint): float32
+    {.cdecl, gcsafe, raises: [].} =
+  ## Called by Nuklear to measure text width.
+  ## Signature matches nk_text_width_f exactly (float32, not cfloat) so the
+  ## assignment nkFont.width = raddyMeasureWidth is provably, not coincidentally,
+  ## type-compatible.
+  ## Input: NON-null-terminated char* of byte length `len`.
+  ## Must not raise, allocate, or call raddyLog (cdecl callback rule).
+  if text == nil or len <= 0: return 0.0f32
+  ## Guard against degenerate or NaN font height (h != h is the canonical NaN test).
+  ## NaN propagated into Nuklear layout arithmetic causes downstream Defects across
+  ## the FFI boundary, which surfaces as undefined behavior.
+  if h <= 0.0f32 or h != h: return 0.0f32
+  let fontPtr = cast[ptr RFont](handle.`ptr`)
+  if fontPtr == nil: return 0.0f32
+  const BufMax = 1024
+  var buf: array[BufMax, char]
+  let copyLen = min(int(len), BufMax - 1)
+  copyMem(addr buf[0], text, copyLen)
+  buf[copyLen] = '\0'
+  let measured = measureTextEx(fontPtr[], cast[cstring](addr buf[0]), h, RaddyMeasureSpacing)
+  return measured.x
+
+# ---------------------------------------------------------------------------
+# Font setup proc
+# ---------------------------------------------------------------------------
+
+proc raddyInitFont*(nkFont: var nk_user_font; fontPtr: ptr RFont;
+                    fontPixelHeight: float32) {.raises: [].} =
+  ## Initialize an nk_user_font from a pre-loaded raylib Font (via fontPtr).
+  ##
+  ## fontPtr must point to a pinned RFont with lifetime >= the nk_context.
+  ## The caller is responsible for verifying the font loaded successfully
+  ## (e.g., font.texture.id != 0) before calling this proc — font.nim has
+  ## only a partial view of RFont and cannot access its texture field.
+  ##
+  ## fontPixelHeight: pixel size the font was loaded at (e.g., font.baseSize).
+  nkFont.userdata.`ptr` = cast[pointer](fontPtr)
+  nkFont.height = cfloat(fontPixelHeight)
+  nkFont.width  = raddyMeasureWidth
