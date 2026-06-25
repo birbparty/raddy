@@ -23,18 +23,21 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  ci:
-    name: Type-check, vita gate, tests
+  desktop:
+    # Job id 'desktop' is the required status-check context for branch protection.
+    # nim-version: '2.2.x' — floats within 2.2 for patch-level fixes; pin to an
+    # exact version (e.g. '2.2.10') if a 2.2.y regression appears in CI.
+    name: Desktop — nimble check + nimble test
     runs-on: ubuntu-latest
     timeout-minutes: 20
 
     steps:
       - uses: actions/checkout@v4
 
-      - name: Setup Nim
+      - name: Setup Nim 2.2.x
         uses: jiro4989/setup-nim-action@v2
         with:
-          nim-version: '2.2.0'
+          nim-version: '2.2.x'
 
       - name: Install bddy (test framework)
         run: nimble install -y "https://github.com/mattsp1290/bddy"
