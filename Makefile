@@ -1,10 +1,11 @@
-.PHONY: test check check-vita
+.PHONY: test verify check check-vita
 
-test:
-	bash scripts/verify.sh
+test verify:
+	./scripts/verify.sh
 
+# Quick single-file checks delegate to nimble tasks (canonical flag source).
 check:
-	nim check --mm:orc --hints:off --path:src src/raddy.nim
+	nimble check
 
 check-vita:
-	nim check --mm:arc --hints:off --path:src -d:vita src/raddy.nim
+	nimble check_vita
