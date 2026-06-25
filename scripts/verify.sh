@@ -174,6 +174,12 @@ else
   echo "    WARNING: naylib not found — skipping examples/demo.nim compile check"
 fi
 
+echo "==> verify: test_smoke_headless (demo UI, 5 frames, -d:raddyFixed)"
+BDDY_DIR_SMOKE=$(find "$HOME/.nimble/pkgs2" -maxdepth 1 -name 'bddy-*' -type d | head -1)
+nim c --mm:orc --hints:off --path:src --path:"$BDDY_DIR_SMOKE" \
+  -d:raddyFixed \
+  -r tests/test_smoke_headless.nim
+
 echo "==> verify: nimble test"
 nimble test
 
