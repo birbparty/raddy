@@ -184,6 +184,9 @@ nim c --mm:orc --hints:off --path:src --path:"$BDDY_DIR_SMOKE" \
   -d:raddyFixed \
   -r tests/test_smoke_headless.nim
 
+echo "==> verify: nimble check (package + task definitions)"
+nimble check
+
 echo "==> verify: nimble test"
 nimble test
 
