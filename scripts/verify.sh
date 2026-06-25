@@ -16,7 +16,7 @@ check_target() {
   local mm="$1"; shift
   echo "    nim check src/raddy.nim"
   nim check --mm:"$mm" --hints:off --path:src "$@" src/raddy.nim
-  for f in src/raddy/*.nim; do
+  for f in src/raddy/*.nim src/raddy/backend/*.nim; do
     [[ -f "$f" ]] || continue
     echo "    nim check $f"
     nim check --mm:"$mm" --hints:off --path:src "$@" "$f"

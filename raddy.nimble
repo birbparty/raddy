@@ -24,7 +24,15 @@ task test, "Run the test suite":
   if bddyDirs.len > 1:
     echo "raddy test: WARNING multiple bddy-* dirs found, using " & bddyDirs[0]
   let bddyDir = bddyDirs[0]
-  let flags = "--mm:orc --hints:off --path:src --path:" & bddyDir
+  # Find naylib's raylib/ directory for backend tests that need raylib.h.
+  let (naylibRaw, _) = gorgeEx(
+    "find " & home & "/.nimble/pkgs2 -maxdepth 1 -name 'naylib-*' -type d")
+  let naylibDirs = naylibRaw.strip().splitLines()
+  let naylibPassC = if naylibDirs.len > 0 and naylibDirs[0].len > 0:
+    " --passC:\"-I" & naylibDirs[0] & "/raylib\""
+  else:
+    ""
+  let flags = "--mm:orc --hints:off --path:src --path:" & bddyDir & naylibPassC
   # Tests live flat in tests/ (no subdirectories); listFiles is non-recursive by design.
   for f in listFiles("tests"):
     if f.endsWith(".nim") and f.contains("test_"):
