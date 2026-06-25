@@ -145,12 +145,15 @@ CORE_FILES=(
   src/raddy/style.nim src/raddy/input.nim  src/raddy/layout.nim
   src/raddy/widgets.nim src/raddy/vendor.nim
 )
-PURITY_VIOLATIONS=$(grep -n \
-  -E '^\s*(import|from)\s+(naylib|raylib_console|inputty)' \
+# Two-stage grep: extract import/include/from lines, then search for the
+# forbidden name anywhere in the module list (catches `import std/os, naylib`).
+# Word-boundary via ([[:space:],/]|$) prevents `naylib_compat` false positives.
+IMPORT_LINES=$(grep -n -E '^\s*(import|include|from)\s+' \
   "${CORE_FILES[@]}" 2>/dev/null || true)
-BACKEND_VIOLATIONS=$(grep -n \
-  -E '^\s*(import|from)\s+(\./backend|raddy/backend)' \
-  "${CORE_FILES[@]}" 2>/dev/null || true)
+PURITY_VIOLATIONS=$(printf '%s\n' "$IMPORT_LINES" | \
+  grep -E '(naylib|raylib_console|inputty)([[:space:],/]|$)' || true)
+BACKEND_VIOLATIONS=$(printf '%s\n' "$IMPORT_LINES" | \
+  grep -E '(\.\/backend|raddy\/backend)' || true)
 if [[ -n "$PURITY_VIOLATIONS" || -n "$BACKEND_VIOLATIONS" ]]; then
   echo "  ERROR: core module import purity violation:" >&2
   [[ -n "$PURITY_VIOLATIONS"  ]] && echo "$PURITY_VIOLATIONS"  >&2
