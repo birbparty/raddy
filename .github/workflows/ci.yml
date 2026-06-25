@@ -11,13 +11,22 @@ on:
 # tests/stubs/raylib.h via gcc -fsyntax-only. No VitaSDK / arm-vita-eabi-gcc
 # required. This is type-check + C codegen only — NOT a cross-compile.
 #
-# Keep tests/stubs/raylib.h in sync with the host draw-proc surface in
-# topdown/clckr raylib_console.nim (see raddy-5ce HOST_SYMBOL_VERIFY).
+# Keep tests/stubs/raylib.h in sync with symbols asserted by
+# tests/verify_raylib_codegen.nim and the naylib raylib.h surface.
+# The Vita console headers are an external reference (see raddy-5ce HOST_SYMBOL_VERIFY).
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   ci:
     name: Type-check, vita gate, tests
     runs-on: ubuntu-latest
+    timeout-minutes: 20
 
     steps:
       - uses: actions/checkout@v4
@@ -25,13 +34,18 @@ jobs:
       - name: Setup Nim
         uses: jiro4989/setup-nim-action@v2
         with:
-          nim-version: '2.x'
+          nim-version: '2.2.0'
 
       - name: Install bddy (test framework)
         run: nimble install -y "https://github.com/mattsp1290/bddy"
 
       - name: Install naylib (raylib headers for codegen test)
         run: nimble install -y "https://github.com/planetis-m/naylib"
+
+      - name: Assert naylib discoverable (vita C-name verification depends on it)
+        run: |
+          test -n "$(find "$HOME/.nimble/pkgs2" -maxdepth 1 -name 'naylib-*' -type d)" \
+            || { echo '::error::naylib not found in ~/.nimble/pkgs2 — vita C-name verification would be silently skipped'; exit 1; }
 
       - name: Run verify (type-check + vita gate + tests)
         run: ./scripts/verify.sh
