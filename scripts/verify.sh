@@ -109,7 +109,8 @@ gcc -std=c99 -fsyntax-only -w \
   "$VITA_CACHE/@praddy@sbackend@sraylib_api.nim.c" \
   "$VITA_CACHE/@praddy@sbackend@srender.nim.c" \
   "$VITA_CACHE/@praddy@sbackend@sfont.nim.c" \
-  "$VITA_CACHE/@praddy@sbackend@sgeom.nim.c"
+  "$VITA_CACHE/@praddy@sbackend@sgeom.nim.c" \
+  "$VITA_CACHE/@praddy@sbackend@spump_vita.nim.c"
 echo "    vita C surface check: OK"
 # Symbol presence/naming on the real vita console (arm-vita-eabi-gcc) is in raddy-tzc.
 

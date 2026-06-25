@@ -32,6 +32,14 @@ Use `raddyVitaCursorSet(x, y)` to teleport the cursor (e.g. on scene change).
 | Stick scale | 6 px/frame (full deflection) | `raddyVitaPump(ctx, w, h, stickScale=N)` |
 | Stick dead-zone | 0.15 (±15 % of axis range) | compile-time const in pump_vita.nim |
 
+Maximum cursor displacement per frame when both D-pad and left stick are held simultaneously:
+`dpadStep + round(stickScale)` pixels (defaults: 4 + 6 = 10 px). The stick displacement
+uses `round()` rather than truncation, so the true dead-zone boundary is 0.15 on all
+axes regardless of `stickScale`.
+
+Only one pump instance is supported per process — `cursorX`/`cursorY` are module-level
+vars. A second Nuklear context would share the same cursor state (not a concern on Vita).
+
 ---
 
 ## Host usage pattern
@@ -104,14 +112,25 @@ text input is disabled on Vita UI layouts.
    may add a `raddyVitaTouchPump` once the front/rear touch surface contract
    is defined for topdown and clckr.
 
-5. **Raylib button ordinals**: The pump hardcodes `GAMEPAD_BUTTON_*` ordinals
+5. **No scroll mapping**: L and R shoulder buttons (`GAMEPAD_BUTTON_LEFT_TRIGGER_1`,
+   `GAMEPAD_BUTTON_RIGHT_TRIGGER_1`) are not mapped to `raddyInputScroll`. Scroll
+   panels are reachable via D-pad/stick on the scrollbar track (NK_BUTTON_LEFT), but
+   not via the conventional Vita shoulder-button scroll gesture. A follow-up bead may
+   add L/R → `raddyInputScroll(ctx, 0, ±step)` mapping.
+
+6. **Raylib button ordinals**: The pump hardcodes `GAMEPAD_BUTTON_*` ordinals
    matching standard raylib. The vita raylib_console port uses these same
    values (PS Vita hardware maps cleanly onto raylib's GamepadButton enum).
    Verify against the actual `raylib_console.nim` header in bead raddy-tzc.
 
-6. **Cursor wrap / bounds**: Cursor is clamped (not wrapped) at canvas edges.
+7. **Cursor wrap / bounds**: Cursor is clamped (not wrapped) at canvas edges.
    A widget at the far edge of a large canvas may require many D-pad taps.
    Hosts can set `dpadStep` higher for larger canvases.
+
+8. **`raddyVitaCursorSet` does not clamp**: Out-of-bounds values are accepted.
+   The next `raddyVitaPump` call re-clamps via `max`/`min`/`clamp` only when
+   input is received; if no input arrives that frame, the unclamped position is
+   fed to `nk_input_motion`. Nuklear tolerates off-screen cursor positions.
 
 ---
 

@@ -22,6 +22,7 @@
 when not defined(vita):
   {.error: "pump_vita.nim is Vita-only — import only under -d:vita".}
 
+import std/math   ## round (float32 → int32 without truncation bias)
 import ../types   ## nk_context, NkButtons
 import ../input   ## raddyInputMotion, raddyInputButton
 
@@ -88,6 +89,7 @@ proc raddyVitaPump*(ctx: ptr nk_context; canvasW, canvasH: int32;
   ##   stickScale — max cursor pixels moved per frame at full stick deflection
   ##
   ## The cursor is clamped to [0, canvasW-1] × [0, canvasH-1].
+  if canvasW <= 0 or canvasH <= 0: return
 
   # -- Cursor movement: D-pad (digital) -------------------------------------
   if isGamepadButtonDown(VPad, BtnDpadLeft):  cursorX = max(0'i32, cursorX - dpadStep)
@@ -99,9 +101,9 @@ proc raddyVitaPump*(ctx: ptr nk_context; canvasW, canvasH: int32;
   let ax = getGamepadAxisMovement(VPad, AxisLX)
   let ay = getGamepadAxisMovement(VPad, AxisLY)
   if abs(ax) > StickDeadzone:
-    cursorX = clamp(cursorX + int32(ax * stickScale), 0'i32, canvasW - 1)
+    cursorX = clamp(cursorX + int32(round(ax * stickScale)), 0'i32, canvasW - 1)
   if abs(ay) > StickDeadzone:
-    cursorY = clamp(cursorY + int32(ay * stickScale), 0'i32, canvasH - 1)
+    cursorY = clamp(cursorY + int32(round(ay * stickScale)), 0'i32, canvasH - 1)
 
   # Feed updated cursor position every frame (Nuklear needs it for hit-tests)
   raddyInputMotion(ctx, cursorX, cursorY)

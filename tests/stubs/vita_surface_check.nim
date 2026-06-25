@@ -25,6 +25,7 @@
 import raddy/types
 import raddy/backend/render
 import raddy/backend/font
+import raddy/backend/pump_vita
 
 ## vitaRenderSurface: exported to C so Nim cannot DCE it.
 ## The export name is in the stub to ensure the symbol resolves cleanly.
@@ -38,3 +39,8 @@ proc vitaRenderSurface*(ctx: ptr nk_context; framebufferH: int32;
 proc vitaMeasureSurface*(handle: nk_handle; h: float32;
                           text: cstring; len: cint): float32 {.exportc.} =
   raddyMeasureWidth(handle, h, text, len)
+
+## vitaInputSurface: forces pump_vita.nim's gamepad importc procs to be emitted.
+## canvasW/H are dummy values; this proc is never called at runtime.
+proc vitaInputSurface*(ctx: ptr nk_context; w, h: int32) {.exportc.} =
+  raddyVitaPump(ctx, w, h)
