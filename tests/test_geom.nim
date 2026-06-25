@@ -28,13 +28,13 @@ spec "rectRoundness":
     verify:
       r == 0.0f
 
+  it "h=0 guard → returns 0.0":
+    let r = rectRoundness(5.0f, 50.0f, 0.0f)
+    verify:
+      r == 0.0f
+
 spec "fixTriWinding":
   it "CW triangle (positive area in Y-down) causes b,c swap":
-    ## In Y-down, a=(0,0) b=(10,0) c=(0,10) is CCW (area < 0), so pick a CW one.
-    ## a=(0,0) b=(0,10) c=(10,0): area = (0-0)*(0-0)-(10-0)*(10-0) = 0-100 = -100 → CCW
-    ## a=(0,0) b=(10,0) c=(0,-10): area = (10-0)*(-10-0)-(0-0)*(0-0) = -100 → CCW
-    ## CW in Y-down: a=(0,0) b=(0,10) c=(10,10) → area=(0)*(10)-(10)*(10)=-100 ... hmm
-    ## Let's be explicit: area=(b.x-a.x)*(c.y-a.y)-(c.x-a.x)*(b.y-a.y)
     ## a=(0,0) b=(1,0) c=(1,1): area=(1)*(1)-(1)*(0)=1 > 0 → CW → swap expected
     var a = RVec2(x: 0.0f, y: 0.0f)
     var b = RVec2(x: 1.0f, y: 0.0f)
@@ -67,15 +67,36 @@ spec "radToDeg":
     verify:
       (if diff < 0.0f: -diff else: diff) < 0.001f
 
+  it "PI/2 radians → ~90.0 degrees (non-cancelling test)":
+    ## Uses a literal for PI/2 so this doesn't depend on geom.PI cancelling.
+    let deg = radToDeg(1.5707964f)
+    let diff = deg - 90.0f
+    verify:
+      (if diff < 0.0f: -diff else: diff) < 0.001f
+
 spec "bezierTessellate":
-  it "P0=(0,0) P3=(1,1) → pts[0]=(0,0), pts[20]=(1,1), pts[10].x in [0.4,0.6]":
+  it "P0=(0,0) P3=(1,1) → pts[0]=(0,0), pts[BezierSegs]=(1,1), midpoint in [0.4,0.6]":
     let P0 = RVec2(x: 0.0f, y: 0.0f)
     let P1 = RVec2(x: 0.0f, y: 0.0f)
     let P2 = RVec2(x: 1.0f, y: 1.0f)
     let P3 = RVec2(x: 1.0f, y: 1.0f)
-    var pts: array[21, RVec2]
+    var pts: array[BezierSegs + 1, RVec2]
     bezierTessellate(P0, P1, P2, P3, pts)
     verify:
       pts[0].x == 0.0f and pts[0].y == 0.0f and
-      pts[20].x == 1.0f and pts[20].y == 1.0f and
-      pts[10].x >= 0.4f and pts[10].x <= 0.6f
+      pts[BezierSegs].x == 1.0f and pts[BezierSegs].y == 1.0f and
+      pts[BezierSegs div 2].x >= 0.4f and pts[BezierSegs div 2].x <= 0.6f
+
+  it "straight line P0=(0,0) P1=(0,0) P2=(1,0) P3=(1,0) → all y==0":
+    ## A degenerate Bézier where all control points share y=0 should produce flat strip.
+    let P0 = RVec2(x: 0.0f, y: 0.0f)
+    let P1 = RVec2(x: 0.0f, y: 0.0f)
+    let P2 = RVec2(x: 1.0f, y: 0.0f)
+    let P3 = RVec2(x: 1.0f, y: 0.0f)
+    var pts: array[BezierSegs + 1, RVec2]
+    bezierTessellate(P0, P1, P2, P3, pts)
+    var allYZero = true
+    for i in 0 .. BezierSegs:
+      if pts[i].y != 0.0f: allYZero = false
+    verify:
+      allYZero

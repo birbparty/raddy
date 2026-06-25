@@ -17,8 +17,14 @@ import raddy/backend/raylib_api     ## RFont (for ptr casts)
 
 # ---------------------------------------------------------------------------
 # Linker stub — MeasureTextEx returns Vector2{0,0} in the test binary.
-# The nil/len guards in raddyMeasureWidth mean this is never actually called
-# by any test below.  The symbol must exist to satisfy the linker.
+# The nil/len/h guards in raddyMeasureWidth mean this is never actually called
+# by any test below. The symbol must exist to satisfy the linker.
+#
+# Why {.emit.} and not a Nim {.exportc.} stub: raddyMeasureWidth imports
+# MeasureTextEx via {.importc: "MeasureTextEx".}, so Nim generates a C #include
+# and a call to the C symbol directly. A Nim {.exportc.} proc with the same name
+# would appear AFTER the importc declaration in the generated C, causing a
+# conflicting-types compiler error. The raw C emit avoids that ordering issue.
 # ---------------------------------------------------------------------------
 {.emit: """
 #include "raylib.h"
@@ -58,6 +64,18 @@ spec "raddyMeasureWidth nil guards":
     let dummy = "hello"
     verify:
       raddyMeasureWidth(h, 16.0f, dummy.cstring, 5) == 0.0f
+
+  it "returns 0.0 when h is 0 (degenerate font height)":
+    var h: nk_handle
+    let dummy = "hello"
+    verify:
+      raddyMeasureWidth(h, 0.0f, dummy.cstring, 5) == 0.0f
+
+  it "returns 0.0 when h is negative":
+    var h: nk_handle
+    let dummy = "hello"
+    verify:
+      raddyMeasureWidth(h, -1.0f, dummy.cstring, 5) == 0.0f
 
 # ---------------------------------------------------------------------------
 # Buffer truncation logic — unit-test the min(len, BufMax-1) invariant
