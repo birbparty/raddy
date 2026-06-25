@@ -28,6 +28,12 @@ check_target() {
   done
 }
 
+# nimble check is the built-in package validator (distinct from the 'check'
+# task in raddy.nimble, which runs nim check type-checking). Runs first so a
+# malformed .nimble file fails fast before the heavier compilation steps.
+echo "==> verify: nimble check (package + task definitions)"
+nimble check
+
 # Desktop is also exercised by `nimble test` below; this is a fast lib-only
 # pre-flight that isolates library failures from test failures.
 echo "==> verify: type-check desktop (--mm:orc)"
@@ -183,9 +189,6 @@ fi
 nim c --mm:orc --hints:off --path:src --path:"$BDDY_DIR_SMOKE" \
   -d:raddyFixed \
   -r tests/test_smoke_headless.nim
-
-echo "==> verify: nimble check (package + task definitions)"
-nimble check
 
 echo "==> verify: nimble test"
 nimble test

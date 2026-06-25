@@ -24,7 +24,10 @@ concurrency:
 
 jobs:
   desktop:
-    name: Desktop — nimble check + nimble test (Nim 2.2.x)
+    # Job id 'desktop' is the required status-check context for branch protection.
+    # nim-version: '2.2.x' — floats within 2.2 for patch-level fixes; pin to an
+    # exact version (e.g. '2.2.10') if a 2.2.y regression appears in CI.
+    name: Desktop — nimble check + nimble test
     runs-on: ubuntu-latest
     timeout-minutes: 20
 
