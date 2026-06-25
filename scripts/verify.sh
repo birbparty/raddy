@@ -72,6 +72,18 @@ nim c --mm:orc --hints:off --path:src -d:raddyFixed \
   ${NAYLIB_PASSC} \
   -r tests/test_render.nim
 
+echo "==> verify: nuklear.h SHA256 matches VENDORED.md"
+EXPECTED_SHA=$(grep 'SHA256 of `nuklear.h`' src/raddy/vendor/VENDORED.md | grep -oE '[0-9a-f]{64}')
+ACTUAL_SHA=$(sha256sum src/raddy/vendor/nuklear.h | awk '{print $1}')
+if [[ "$EXPECTED_SHA" != "$ACTUAL_SHA" ]]; then
+  echo "  ERROR: nuklear.h SHA256 mismatch" >&2
+  echo "    VENDORED.md: $EXPECTED_SHA" >&2
+  echo "    actual:      $ACTUAL_SHA" >&2
+  echo "  Update VENDORED.md after upgrading nuklear.h." >&2
+  exit 1
+fi
+echo "    SHA256 verified: $ACTUAL_SHA"
+
 echo "==> verify: compile-check nuklear_impl.c (desktop)"
 command -v gcc >/dev/null || { echo "verify: gcc not found — install a C compiler" >&2; exit 1; }
 gcc -std=c99 -fsyntax-only -Wall \
