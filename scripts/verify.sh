@@ -45,6 +45,11 @@ echo "==> verify: compile-only check src/raddy/context.nim (desktop + vita)"
 nim c --compileOnly --mm:orc --hints:off --path:src src/raddy/context.nim
 nim c --compileOnly --mm:arc --hints:off --path:src -d:vita src/raddy/context.nim
 
+echo "==> verify: test_context with -d:raddyFixed (exercises overflow detection)"
+nim c --mm:orc --hints:off --path:src -d:raddyFixed \
+  --path:"$(find "$HOME/.nimble/pkgs2" -maxdepth 1 -name 'bddy-*' -type d | head -1)" \
+  -r tests/test_context.nim
+
 echo "==> verify: compile-check nuklear_impl.c (desktop)"
 command -v gcc >/dev/null || { echo "verify: gcc not found — install a C compiler" >&2; exit 1; }
 gcc -std=c99 -fsyntax-only -Wall \

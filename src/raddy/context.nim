@@ -20,50 +20,53 @@ const nkH = "nuklear.h"
 # Raw C FFI bindings
 # ---------------------------------------------------------------------------
 
-proc nk_init_default*(ctx: ptr nk_context; font: ptr nk_user_font): nk_bool
-    {.importc: "nk_init_default", header: nkH.}
-  ## Heap-backed init (NK_INCLUDE_DEFAULT_ALLOCATOR required — desktop only).
-  ## Returns nk_bool (0 = failure).
+when not defined(vita):
+  proc nk_init_default*(ctx: ptr nk_context; font: ptr nk_user_font): nk_bool
+      {.importc: "nk_init_default", header: nkH.}
+    ## Heap-backed init. Only available when NK_INCLUDE_DEFAULT_ALLOCATOR is defined
+    ## (i.e., desktop builds). Calling on Vita is a link error — guard call sites
+    ## with `when not defined(vita):`.
 
 proc nk_init_fixed*(ctx: ptr nk_context; memory: pointer; size: nk_size;
                     font: ptr nk_user_font): nk_bool
     {.importc: "nk_init_fixed", header: nkH.}
-  ## Fixed-buffer init — Nuklear silently drops commands on exhaustion (no realloc).
+  ## Fixed-buffer init. Nuklear silently drops commands when full (no realloc).
   ## `memory` must remain valid for the context's entire lifetime.
-  ## Returns nk_bool (0 = failure).
 
 proc nk_free*(ctx: ptr nk_context) {.importc: "nk_free", header: nkH.}
-  ## Release internal context allocations. Not needed after nk_init_fixed.
+  ## Release internal context allocations. Not needed after nk_init_fixed, but safe.
 
 proc nk_clear*(ctx: ptr nk_context) {.importc: "nk_clear", header: nkH.}
   ## Reset the command queue for the next frame.
   ## MUST be called AFTER raddyRender() drains the queue and BEFORE nk_input_begin().
 
 # ---------------------------------------------------------------------------
-# Per-session sentinel flags (module-level so "log once" survives across frames)
+# Per-session sentinel flags (module-level, one per process; single-context assumption)
 # ---------------------------------------------------------------------------
 
-var overflowWarned = false
-var initFailedWarned = false
+var overflowWarned  = false  ## set once when buffer overflow is first detected
+var initFailedWarned = false  ## set once if init fails (Vita path)
 
 # ---------------------------------------------------------------------------
 # Nim-level wrappers
 # ---------------------------------------------------------------------------
 
 proc raddyCtxInit*(ctx: ptr nk_context; font: ptr nk_user_font;
-                   buf: pointer = nil; bufLen: nk_size = 0): bool =
+                   buf: pointer = nil; bufLen: nk_size = 0): bool {.raises: [].} =
   ## Initialize a Nuklear context with the given font.
   ##
-  ## Desktop (--mm:orc): calls nk_init_default. buf/bufLen are ignored.
-  ## Vita (--mm:arc -d:vita): calls nk_init_fixed. Caller must provide buf pointing
-  ## to a buffer of at least RaddyCmdBufBytes bytes, with lifetime >= ctx's lifetime.
+  ## Desktop (not -d:vita, not -d:raddyFixed): uses nk_init_default (heap, growing).
+  ##   buf/bufLen are ignored.
+  ## Vita or -d:raddyFixed: uses nk_init_fixed. buf must point to a buffer of at
+  ##   least RaddyCmdBufBytes bytes whose lifetime equals or exceeds the context.
   ##
-  ## Returns true on success. Font pointer must outlive the context.
-  when defined(vita):
+  ## Returns true on success. On success, font pointer must outlive the context.
+  ## Call raddyCtxFree only after a successful init.
+  when defined(vita) or defined(raddyFixed):
     raddyAssertFatal buf != nil,
-      "raddyCtxInit: buf must be non-nil on Vita (nk_init_fixed path)"
+      "raddyCtxInit: buf must be non-nil on fixed-buffer path"
     raddyAssertFatal bufLen >= nk_size(RaddyCmdBufBytes),
-      "raddyCtxInit: bufLen too small; allocate at least RaddyCmdBufBytes bytes"
+      "raddyCtxInit: bufLen too small; use at least RaddyCmdBufBytes bytes"
     let ok = bool(nk_init_fixed(ctx, buf, bufLen, font))
     if not ok:
       raddyLogOnce(initFailedWarned, "nk_init_fixed returned false — context unusable")
@@ -73,27 +76,30 @@ proc raddyCtxInit*(ctx: ptr nk_context; font: ptr nk_user_font;
     raddyAssert ok, "nk_init_default returned false — context unusable", initFailedWarned
     return ok
 
-proc raddyCtxFree*(ctx: ptr nk_context) {.inline.} =
-  ## Release Nuklear context resources (desktop only — no-op after nk_init_fixed).
-  ## Call once on teardown.
+proc raddyCtxFree*(ctx: ptr nk_context) {.inline, raises: [].} =
+  ## Release Nuklear context resources. Only call after raddyCtxInit returned true.
+  ## On nk_init_fixed paths nk_free is a no-op (does not own the memory),
+  ## but calling it is safe.
   nk_free(ctx)
 
-proc raddyCtxClear*(ctx: ptr nk_context; bufOverflow: var bool) {.inline.} =
-  ## Per-frame reset. Call AFTER raddyRender() and BEFORE the next nk_input_begin().
+proc raddyCtxClear*(ctx: ptr nk_context; bufOverflow: var bool) {.inline, raises: [].} =
+  ## Per-frame reset. Call AFTER raddyRender() drains the queue and BEFORE
+  ## the next nk_input_begin().
   ##
-  ## Detects command-buffer overflow on the nk_init_fixed path (Vita / -d:raddyFixed):
-  ## ctx.memory.allocated >= ctx.memory.size → commands were silently dropped.
-  ## Sets bufOverflow=true if overflow detected this frame.
+  ## Overflow detection on the fixed-buffer path (Vita / -d:raddyFixed):
+  ##   ctx.memory.needed > ctx.memory.size → commands were silently dropped.
+  ## Why `needed` not `allocated`: nk_buffer_alloc increments `needed` before
+  ## the full check, then returns 0 without advancing `allocated`. So `allocated`
+  ## stays below `size` even when overflow occurred; `needed` exceeds `size`.
+  ## See src/raddy/vendor/nuklear.h:nk_buffer_alloc for the authoritative source.
   ##
-  ## Desktop: uses nk_init_default (heap-backed, unlimited); overflow cannot happen,
-  ## but the check runs as a doAssert to catch misuse early.
-  when defined(vita):
-    bufOverflow = ctx.memory.allocated >= ctx.memory.size
+  ## Sets bufOverflow=true if overflow occurred this frame, false otherwise.
+  ## The renderer MUST check bufOverflow and skip emitting a partial frame.
+  when defined(vita) or defined(raddyFixed):
+    bufOverflow = ctx.memory.needed > ctx.memory.size
     if bufOverflow:
       raddyLogOnce(overflowWarned,
         "Nuklear command buffer full — some commands were silently dropped this frame")
   else:
-    bufOverflow = false
-    doAssert ctx.memory.allocated < ctx.memory.size,
-      "Nuklear cmd buf overflow (unexpected on nk_init_default/heap path)"
+    bufOverflow = false  ## desktop heap path cannot overflow
   nk_clear(ctx)
