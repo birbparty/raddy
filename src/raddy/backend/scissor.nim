@@ -28,3 +28,15 @@ static:
   ## Bottom rect: y=H-h, h → y'=0
   let (_, ry4, _, _) = scissorYFlip(0, 430, 100, 50, 480)
   doAssert ry4 == 0, "bottom rect → y'=0"
+
+  ## nk_null_rect case: Nuklear uses {x:-8192,y:-8192,w:16384,h:16384} for popup
+  ## overlays (effectively "disable clipping so the popup can draw outside the
+  ## parent window bounds"). After the Y-flip the rect remains huge and negative-Y;
+  ## raylib's BeginScissorMode clamps it to the drawable area, which is the correct
+  ## behaviour — the popup is visible everywhere on screen.
+  ## Formula: y' = H - (-8192) - 16384 = H - 8192
+  let (nx, ny5, nw, nh) = scissorYFlip(-8192, -8192, 16384, 16384, 600)
+  doAssert nx  == -8192,          "null-rect: x passes through unchanged"
+  doAssert ny5 == 600 - 8192,     "null-rect: y' = H - 8192 (large negative, raylib clamps)"
+  doAssert nw  == 16384,          "null-rect: w passes through unchanged"
+  doAssert nh  == 16384,          "null-rect: h passes through unchanged"

@@ -1,7 +1,7 @@
 ## examples/demo.nim — raddy desktop demo
 ##
 ## Exercises the full public API surface:
-##   window · labels · buttons · slider · checkbox · edit field · scrolled group
+##   window · labels · buttons · slider · checkbox · edit field · combo · scrolled group
 ##
 ## Build (desktop, naylib installed via nimble):
 ##   NAYLIB=$(nimble path naylib)
@@ -58,6 +58,7 @@ var
   checkB     = true
   sliderVal  = 50.0f
   editBuf    = "Hello, raddy!"
+  comboSel   = 0
 
 # ---------------------------------------------------------------------------
 # Frame: build the Nuklear UI
@@ -118,6 +119,21 @@ proc buildUI(ctx: ptr nk_context) =
   raddyLabel(ctx, "Edit field")
   raddyLayoutRowDynamic(ctx, height = 30, cols = 1)
   discard raddyEdit(ctx, NK_EDIT_FIELD_FLAGS, editBuf, maxLen = EditMaxLen)
+
+  # ---- Combo ----------------------------------------------------------------
+  # Exercises Nuklear's popup + scissor path (collapsed state only without input).
+  # When clicked, nk_combo opens a popup panel using nk_null_rect as its scissor
+  # region — a {-8192,-8192,16384,16384} rect that lets the dropdown draw outside
+  # the parent window bounds. The Y-flipped scissor is large-and-negative-Y;
+  # raylib's BeginScissorMode clamps it to the drawable area (correct behaviour).
+  raddyLayoutRowDynamic(ctx, height = 8, cols = 1)
+  raddySpacing(ctx, 1)
+  raddyLayoutRowDynamic(ctx, height = 20, cols = 1)
+  raddyLabel(ctx, "Combo (collapsed path)")
+  raddyLayoutRowDynamic(ctx, height = 25, cols = 1)
+  const comboItems = ["Alpha", "Beta", "Gamma"]
+  comboSel = raddyCombo(ctx, comboItems, comboSel,
+                        itemHeight = 25, size = nk_vec2(x: 200, y: 120))
 
   # ---- Scrolled group -------------------------------------------------------
   raddyLayoutRowDynamic(ctx, height = 8, cols = 1)
