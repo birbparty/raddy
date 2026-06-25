@@ -15,7 +15,8 @@
 ##   3. cmdBuf       — Fixed backing buffer for Nuklear on the vita/raddyFixed path.
 ##                     On the desktop heap path this field does not exist.
 ##
-## Usage:
+## Usage (myFont MUST outlive the bundle — module global or long-lived field):
+##   var myFont {.global.} = loadFont(...)        ## caller-owned, stable address
 ##   var bundle = raddyBundleCreate(addr myFont, fontPixelSize = 32.0f)
 ##   # ... per-frame: raddyBundleCtx(bundle) for nk_context ptr
 ##   raddyBundleFree(bundle)
@@ -30,13 +31,17 @@ import ./font      ## raddyInitFont
 # Bundle type
 # ---------------------------------------------------------------------------
 
-type RaddyCtxBundle* = ref object
+type RaddyCtxBundle* {.acyclic.} = ref object
   ## Long-lived container. Holds all Nuklear state that must outlive the context.
   ## Create with raddyBundleCreate; free with raddyBundleFree.
   nkFont*:  nk_user_font
   ctx*:     nk_context
   fontOk*:  bool  ## true if raddyInitFont succeeded (fontPtr was non-nil)
+  ctxOk*:   bool  ## true if raddyCtxInit succeeded; false = UI non-functional
+  freed:    bool  ## sentinel: raddyBundleFree sets this; guards against double-free
   when defined(vita) or defined(raddyFixed):
+    ## NOTE: embeds RaddyCmdBufBytes (default 64 KiB) inline per bundle heap block.
+    ## Create one bundle per context, not one per frame.
     cmdBuf*: array[RaddyCmdBufBytes, byte]
 
 # ---------------------------------------------------------------------------
@@ -59,6 +64,10 @@ proc raddyBundleCreate*(fontPtr: ptr RFont; fontPixelSize: float32): RaddyCtxBun
   if not bundle.fontOk:
     raddyLog("raddyBundleCreate: fontPtr is nil — text will not render")
 
+  # Always call raddyInitFont even when fontPtr is nil: it wires up the width
+  # callback (raddyMeasureWidth) which self-guards against a nil font ptr.
+  # Skipping the call entirely would leave nkFont.width==nil, causing a null
+  # function-pointer crash when Nuklear calls style.font->width during layout.
   raddyInitFont(bundle.nkFont, fontPtr, fontPixelSize)
 
   when defined(vita) or defined(raddyFixed):
@@ -67,6 +76,7 @@ proc raddyBundleCreate*(fontPtr: ptr RFont; fontPixelSize: float32): RaddyCtxBun
   else:
     let ok = raddyCtxInit(addr bundle.ctx, addr bundle.nkFont)
 
+  bundle.ctxOk = ok
   if not ok:
     raddyLog("raddyBundleCreate: context init failed — UI will be non-functional")
 
@@ -79,6 +89,7 @@ proc raddyBundleCreate*(fontPtr: ptr RFont; fontPixelSize: float32): RaddyCtxBun
 proc raddyBundleCtx*(bundle: RaddyCtxBundle): ptr nk_context {.inline, raises: [].} =
   ## Return a pointer to the bundle's nk_context for use in Nuklear API calls.
   ## The pointer is stable for the bundle's lifetime.
+  ## Do NOT retain this pointer across raddyBundleFree or past the last live ref to bundle.
   addr bundle.ctx
 
 proc raddyBundleClear*(bundle: RaddyCtxBundle; bufOverflow: var bool) {.inline, raises: [].} =
@@ -92,6 +103,7 @@ proc raddyBundleClear*(bundle: RaddyCtxBundle; bufOverflow: var bool) {.inline, 
 
 proc raddyBundleFree*(bundle: RaddyCtxBundle) {.raises: [].} =
   ## Release Nuklear context state. Does NOT unload the font (caller-owned).
-  ## Safe to call with nil bundle.
-  if bundle == nil: return
+  ## Safe to call with nil bundle. Idempotent — safe to call more than once.
+  if bundle == nil or bundle.freed: return
+  bundle.freed = true
   raddyCtxFree(addr bundle.ctx)

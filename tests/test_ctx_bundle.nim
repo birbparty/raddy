@@ -48,9 +48,18 @@ spec "raddyBundleCreate":
     verify:
       bundle.nkFont.height == cfloat(24.0f)
 
+  it "ctxOk is true after successful init":
+    var dummyFont: RFont
+    var bundle = raddyBundleCreate(addr dummyFont, 32.0f)
+    verify:
+      bundle.ctxOk == true
+
   it "nkFont.width is raddyMeasureWidth":
     var dummyFont: RFont
     var bundle = raddyBundleCreate(addr dummyFont, 32.0f)
+    ## Comparing cdecl proc addresses: valid on current Nim/C backends (Nim emits a
+    ## stable single symbol per {.cdecl.} proc). If this ever flakes across compilers,
+    ## weaken to `bundle.nkFont.width != nil`.
     verify:
       bundle.nkFont.width == raddyMeasureWidth
 
@@ -101,3 +110,29 @@ spec "raddyBundleFree":
     raddyBundleFree(bundle)
     verify:
       true  ## reached without crash
+
+  it "is idempotent — double free does not crash":
+    var dummyFont: RFont
+    var bundle = raddyBundleCreate(addr dummyFont, 32.0f)
+    raddyBundleFree(bundle)
+    raddyBundleFree(bundle)  ## second call must be a no-op (freed sentinel)
+    verify:
+      true  ## reached without crash
+
+when defined(raddyFixed):
+  spec "raddyBundleCreate (raddyFixed path — embedded cmdBuf)":
+
+    it "initialises on the fixed-buffer path and returns non-nil bundle":
+      var dummyFont: RFont
+      var bundle = raddyBundleCreate(addr dummyFont, 32.0f)
+      verify:
+        bundle != nil
+        bundle.ctxOk == true
+
+    it "clears without overflow on fresh init (no commands pushed)":
+      var dummyFont: RFont
+      var bundle = raddyBundleCreate(addr dummyFont, 32.0f)
+      var overflow = true
+      raddyBundleClear(bundle, overflow)
+      verify:
+        overflow == false
