@@ -44,6 +44,10 @@ Implementation rules (all are hard requirements):
   buf[bufLen] = '\0'
   ```
 - Call `MeasureTextEx(font, cast[cstring](addr buf[0]), h, 2.0)` and return `.x`.
+- **Invariant:** Nuklear always passes `nk_user_font.height` as the `h` argument to this
+  callback. So `h` == `nkFont.height` == `font.baseSize` at all times under the pinned font
+  contract. Draw size and measure size are therefore guaranteed equal — there is no case where
+  they diverge with a single pinned font.
 - `spacing = 2.0` matches the `DrawTextEx` spacing used in NK_COMMAND_TEXT handling.
 - Retrieve `font` from `handle.ptr` cast to `ptr Font` then dereferenced. The Font MUST be pinned (see architecture.md lifetime section) — a dangling ptr here is silent corruption.
 - NO echo, NO raise, NO allocation inside this callback.

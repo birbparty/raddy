@@ -4,7 +4,10 @@ This file defines library-wide error handling for raddy. ALL fallible operations
 
 ## Core Policy
 
-All fallible procs return `bool` (success) or a `Result[T, RaddyError]` type where the caller needs the value.
+All fallible procs return `bool` (true = success) or a `(value, bool)` out-param pair where
+the caller also needs the return value. Do NOT use exceptions, and do NOT introduce a
+`Result[T, E]` type — Nim's stdlib has no `Result`; adding `nim-results` or `questionable`
+as a dependency is not approved for v1. Standardize on `bool` / out-params.
 
 Do NOT use exceptions. The Vita build uses `--opt:size --threads:off` and exceptions add overhead and complicate `cdecl` callback boundaries. Exception support is not assumed.
 
@@ -22,7 +25,7 @@ type RaddyError* = enum
 | Condition | Desktop | Vita |
 |---|---|---|
 | Init failure (`nk_init` returns false) | `doAssert false, msg` (crash loud) | return false, log once |
-| Font load failure (`font.texture.id == 0`) | warn echo, set `fontOk=false`, continue | set `fontOk=false`, continue silently |
+| Font load failure (`font.texture.id == 0`) | `stderr.writeLine "raddy: font load failed"`, set `fontOk=false`, continue | set `fontOk=false`, continue silently |
 | Buffer overflow (`nk_init_fixed` exhausted) | `doAssert false, "Nuklear cmd buf overflow"` | set `overflowFlag`, log once per session |
 | Missing host proc (nil function ptr) | `doAssert false, msg` | log once, no-op the command |
 | Unsupported `NK_COMMAND_CUSTOM` | log once (debug) | log once |
@@ -43,6 +46,12 @@ On desktop, `nk_init_default` is used instead (heap-backed, unlimited). The fixe
 ## Buffer Overflow Detection
 
 Nuklear silently drops commands when `nk_init_fixed` buffer is full. Detect by checking `ctx.memory.allocated >= ctx.memory.size` after the UI build phase.
+
+**Binding requirement.** This check requires `nk_buffer` to be imported in `src/raddy/types.nim`
+with at minimum the `allocated` and `size` fields bound as `nk_size`. The `nk_context.memory`
+field is of type `nk_buffer`. Without this binding the check cannot compile. The check is only
+meaningful on the `nk_init_fixed` path; on desktop (`nk_init_default`) the buffer is heap-backed
+and this condition should never trigger.
 
 If true: set `raddyCtx.bufOverflow = true`.
 

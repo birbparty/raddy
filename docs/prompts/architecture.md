@@ -12,15 +12,26 @@ translates Nuklear's command queue into high-level raylib draw calls.
 
 1. At startup: allocate backing memory, call `nk_init_default` (desktop) or `nk_init_fixed`
    (Vita), load a raylib `Font`, build an `nk_user_font` that points back to it.
-2. Each frame: pump input → call `nk_input_begin`/`nk_input_end` → build UI panels with
-   Nuklear widget calls → walk the command queue and emit raylib draw calls → call `nk_clear`.
-3. At shutdown: call `nk_free`.
+   **Check the return value:** both procs return `nk_bool`; treat `0` as `reInitFailed`.
+2. Each frame: `nk_input_begin` → feed input (inside the begin/end boundary) → `nk_input_end`
+   → build UI panels → check for buffer overflow → walk the command queue and emit raylib draw
+   calls → call `nk_clear`.
+3. At shutdown: call `nk_free`. On the fixed-buffer (Vita) path this is safe — it does not
+   free `vitaCmdBuf`; it only releases allocator-owned state (of which there is none).
 
 ### Per-Frame Input Feed
 
-Input is pumped BEFORE `nk_input_begin`. The caller fills mouse position, mouse buttons, scroll,
-and keyboard events by calling raddy's input-feed procs (which delegate to `nk_input_*` C
-functions). `nk_input_end` seals the input snapshot for that frame's UI build.
+All `nk_input_*` calls MUST occur **inside** the `nk_input_begin` / `nk_input_end` boundary.
+Calling them before `nk_input_begin` is undefined behavior in Nuklear. What may happen before
+`nk_input_begin` is raw OS polling (reading `GetMousePosition()` etc.) — but the results must
+only be fed to Nuklear after the boundary opens.
+
+The caller fills Nuklear's input by calling raddy's input-feed procs (`nkInputMotion`,
+`nkInputButton`, `nkInputKey`, `nkInputScroll`, `nkInputUnicode`) or by calling the convenience
+pump (`pumpNaylibInput` / `pumpVitaInput`). `nk_input_end` seals the input snapshot.
+
+See `frame-order.md` — it is the authoritative reference for per-frame order; this section is
+a summary only.
 
 ### Command-Queue Rendering
 
@@ -174,8 +185,10 @@ static:
 
 ### Desktop
 
-```c
-nk_init_default(&ctx, &userFont);
+```nim
+# nk_init_default signature: (ctx, font) — 2 arguments; no allocator parameter.
+if nk_init_default(addr ctx, addr userFont) == 0:
+  return reInitFailed
 ```
 
 Uses the system allocator (libc malloc/free). The backing buffer grows as needed. No fixed size.
@@ -183,25 +196,30 @@ Uses the system allocator (libc malloc/free). The backing buffer grows as needed
 ### PS Vita
 
 ```nim
-const RaddyCmdBufBytes = 65536  # 64 KiB
-var vitaCmdBuf: array[RaddyCmdBufBytes, byte]
-nk_init_fixed(addr ctx, addr vitaCmdBuf[0], RaddyCmdBufBytes.nk_size, addr userFont)
+# RaddyCmdBufBytes is defined in src/raddy/context.nim. See error-strategy.md.
+if nk_init_fixed(addr ctx, addr vitaCmdBuf[0], RaddyCmdBufBytes.nk_size, addr userFont) == 0:
+  return reInitFailed
 ```
 
 - Zero per-frame heap churn: the fixed buffer is reused every frame after `nk_clear`.
 - 64 KiB is sized to hold one full overlay panel's command stream.
 - `nk_init_fixed` silently drops commands when the buffer is exhausted — it does NOT crash or
-  return an error.
+  return an error mid-frame.
 
 ### Overflow detection (REQUIRED)
 
-The renderer MUST check for overflow each frame. Check by comparing the last command pointer
-against a sentinel or by tracking whether any expected commands are absent. Behavior:
+After the UI build phase and BEFORE rendering, check:
 
-- Desktop (debug builds): `doAssert false, "Nuklear command buffer overflow"`
-- Vita: log once (to stderr or a debug overlay), emit no draw calls for that frame, continue.
+```nim
+if ctx.memory.allocated >= ctx.memory.size:
+  raddyCtx.bufOverflow = true
+```
 
-Do not silently discard overflow — it produces invisible UI corruption.
+This requires binding `nk_buffer` with `allocated` and `size` fields as `nk_size`. See
+`error-strategy.md` for the full response matrix. The renderer MUST skip drawing if
+`bufOverflow` is set — a partial frame produces visual corruption (missing scissor resets,
+clipped widgets). On desktop, `doAssert false, "Nuklear cmd buf overflow"` (loud crash). On
+Vita, log once and continue with no draw calls.
 
 ---
 
@@ -225,13 +243,13 @@ them as module-level globals. Do NOT store them as local variables in a proc.
 
 ## Per-Frame Order
 
-Brief summary (see `frame-order.md` for the full detailed protocol):
+Brief summary (see `frame-order.md` for the authoritative protocol):
 
-1. Pump OS events into raddy input-feed procs
-2. `nk_input_begin`
-3. Call all input-feed procs (mouse pos, buttons, scroll, keys)
-4. `nk_input_end`
-5. Build UI: call Nuklear panel/widget procs
+1. `nk_input_begin`
+2. Feed input (inside the boundary): call pump or individual `nk_input_*` procs
+3. `nk_input_end`
+4. Build UI: call Nuklear panel/widget procs
+5. Check overflow: `if ctx.memory.allocated >= ctx.memory.size → raddyCtx.bufOverflow = true`
 6. Render: iterate command queue via `nk__begin`/`nk__next`, emit raylib draw calls
 7. `nk_clear`
 

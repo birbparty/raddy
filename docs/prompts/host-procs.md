@@ -11,7 +11,7 @@ RColor   = object r, g, b, a: uint8
 RVec2    = object x, y: float32
 RRect    = object x, y, width, height: float32
 RFont    # opaque ref to the host Font object (holds a ptr Font from the host binding)
-RTexture # opaque ref to a Texture2D
+RTexture # opaque ref to a Texture2D (width/height fields must be accessible)
 ```
 
 ## Required Draw Procs
@@ -24,17 +24,22 @@ proc rDrawRectangleLinesEx(rect: RRect, thick: float32, color: RColor)
 proc rDrawRectangleRounded(rect: RRect, roundness: float32, segs: int32, color: RColor)
 proc rDrawRectangleRoundedLines(rect: RRect, roundness: float32, segs: int32, thick: float32, color: RColor)
 proc rDrawRectangleGradientEx(rect: RRect, c1, c2, c3, c4: RColor)
-proc rDrawLineEx(start, end: RVec2, thick: float32, color: RColor)
+proc rDrawLineEx(start, `end`: RVec2, thick: float32, color: RColor)
 proc rDrawLineStrip(pts: ptr RVec2, count: int32, color: RColor)
-proc rDrawTriangle(v1, v2, v3: RVec2, color: RColor)
-proc rDrawTriangleFilled(v1, v2, v3: RVec2, color: RColor)  # = DrawTriangle filled
+proc rDrawTriangle(v1, v2, v3: RVec2, color: RColor)         # filled (= DrawTriangle)
+proc rDrawTriangleLines(v1, v2, v3: RVec2, color: RColor)    # outline (= DrawTriangleLines)
+proc rDrawRing(center: RVec2, innerR, outerR, startDeg, endDeg: float32, segs: int32, color: RColor)
 proc rDrawCircleSector(center: RVec2, radius, startDeg, endDeg: float32, segs: int32, color: RColor)
 proc rDrawEllipse(cx, cy: int32, rx, ry: float32, color: RColor)
+proc rDrawEllipseLines(cx, cy: int32, rx, ry: float32, color: RColor)
 proc rDrawTextEx(font: RFont, text: cstring, pos: RVec2, fontSize, spacing: float32, color: RColor)
 proc rDrawTextureRec(tex: RTexture, src: RRect, pos: RVec2, tint: RColor)
 proc rBeginScissorMode(x, y, w, h: int32)
 proc rEndScissorMode()
 ```
+
+**Note:** `DrawTriangleFilled` does NOT exist in raylib. Both filled and outline triangles use
+`DrawTriangle` and `DrawTriangleLines` respectively — both are required.
 
 ## Required Input Procs
 
@@ -63,12 +68,15 @@ Status as of planning date:
 | DrawRectangleGradientEx | CHECK MANUALLY — add to integration notes if missing; use no-op + log fallback |
 | DrawLineEx | PRESENT |
 | DrawLine | PRESENT |
-| DrawTriangle | PRESENT (verify winding; see command-matrix.md) |
+| DrawTriangle | PRESENT (verify winding; see command-matrix.md — winding check PROVISIONAL) |
+| DrawTriangleLines | VERIFY — check topdown console binding |
+| DrawRing | VERIFY — check topdown console binding; used for NK_COMMAND_ARC outline |
 | DrawCircleSector | PRESENT |
-| DrawEllipse | VERIFY — may be DrawEllipseLines only; check topdown console binding |
+| DrawEllipse | VERIFY — may be absent; use DrawCircleV fallback for w==h case |
+| DrawEllipseLines | VERIFY — may be absent; same fallback policy as DrawEllipse |
 | DrawTextEx | PRESENT |
 | BeginScissorMode | PRESENT (verify Y-flip applies to framebuffer height) |
-| EndScissorMode | PRESENT (verify Y-flip applies to framebuffer height) |
+| EndScissorMode | PRESENT |
 | DrawTexture / DrawTextureRec | PRESENT |
 
 ## Missing Host Symbols Policy

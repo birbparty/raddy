@@ -73,6 +73,10 @@ proc raddyRender*(ctx: ptr nk_context; raddyCtx: RaddyCtx; framebufH: int32 = 0)
 - When `framebufH > 0`: apply Y-flip using the formula above.
 - When `framebufH == 0` (clckr native-resolution case): use `cmd.y` directly, no flip.
 
+**⚠️ footgun:** `framebufH == 0` is the no-flip sentinel, not an uninitialized default.
+A caller rendering into a RenderTexture who forgets to pass `framebufH` will silently get
+upside-down scissors. Always pass the explicit texture height for RenderTexture paths.
+
 ## clckr Integration (Native Resolution, Post-endMode2D)
 
 clckr renders in screen space after the 2D game world pass. No RenderTexture is involved.
@@ -136,9 +140,10 @@ Correct order:
 ```
 1. loadFont(...)            -> pin Font in a long-lived object (do NOT let it go out of scope)
 2. initialize nk_user_font  -> set .height and .width callback pointing at the pinned font
-3. nk_init_default(ctx, allocator, addr nkFont)
+3. nk_init_default(ctx, addr nkFont)      # 2 args only — no allocator parameter
    -- OR --
    nk_init_fixed(ctx, buf, bufLen, addr nkFont)   # Vita / -d:raddyFixed path
+   # Both return nk_bool. Check return value — 0 means init failed.
 4. nk_begin / widgets / raddyRender / nk_clear loop begins here
 ```
 
