@@ -95,25 +95,29 @@ proc setClipboardTextImpl(text: cstring)
     {.importc: "SetClipboardText", header: raylibH, sideEffect.}
 
 # ---------------------------------------------------------------------------
-# Nuklear text-edit helpers (clipboard paste decodes UTF-8 → runes)
+# Nuklear text-edit binding for clipboard paste
 # ---------------------------------------------------------------------------
 
 const nkH = "nuklear.h"
 
-proc nkUtfDecode(c: cstring; u: ptr nk_rune; clen: cint): cint
-    {.importc: "nk_utf_decode", header: nkH.}
-proc nkTexteditPaste(edit: ptr nk_text_edit; runes: ptr nk_rune; len: cint): cint
+## nk_textedit_paste(state, text, len): pass raw UTF-8 bytes directly.
+## Returns nk_bool (1 = inserted, 0 = failed / edit-mode view / OOM).
+## Nuklear replaces any active selection and appends an undo entry internally.
+proc nkTexteditPaste(edit: ptr nk_text_edit; text: cstring; len: cint): nk_bool
     {.importc: "nk_textedit_paste", header: nkH.}
 
 # ---------------------------------------------------------------------------
 # Clipboard handlers — registered once via raddyWireClipboard
 # ---------------------------------------------------------------------------
 
-const MaxClipBytes = 4096  ## soft cap for copy; paste is unbounded by design
+const MaxClipBytes = 4096  ## soft cap for copy; paste passes clipboard verbatim
 
 proc raddyClipCopy(userdata: nk_handle; text: cstring; len: cint) {.cdecl, raises: [].} =
   ## Called by Nuklear when the user presses Ctrl+C or Ctrl+X.
-  ## `text` is a len-byte UTF-8 slice (NOT null-terminated); copy to the OS clipboard.
+  ## `text` is a len-byte UTF-8 slice (NOT null-terminated); null-terminate and
+  ## forward to the OS clipboard. Selections over 4096 bytes are truncated at a
+  ## raw byte boundary (a partial multi-byte sequence at the truncation point is
+  ## possible and left as-is; most OS clipboard APIs accept this silently).
   if len <= 0 or text == nil: return
   var buf: array[MaxClipBytes + 1, char]
   let copyLen = min(len.int, MaxClipBytes)
@@ -123,19 +127,13 @@ proc raddyClipCopy(userdata: nk_handle; text: cstring; len: cint) {.cdecl, raise
 
 proc raddyClipPaste(userdata: nk_handle; edit: ptr nk_text_edit) {.cdecl, raises: [].} =
   ## Called by Nuklear when the user presses Ctrl+V inside a text-edit field.
-  ## Fetches UTF-8 text from the OS clipboard, decodes it one rune at a time,
-  ## and inserts each rune via nk_textedit_paste (preserves Nuklear's undo state).
+  ## nk_textedit_paste takes raw UTF-8 bytes; pass the entire clipboard string
+  ## in one call. Nuklear replaces any active selection and records the undo entry.
   let text = getClipboardTextImpl()
   if text == nil: return
   let totalLen = cint(len(text))  # strlen
-  var consumed = cint(0)
-  while consumed < totalLen:
-    var rune: nk_rune
-    let chunk = cast[cstring](cast[int](text) + consumed.int)
-    let advance = nkUtfDecode(chunk, addr rune, totalLen - consumed)
-    if advance <= 0: break
-    discard nkTexteditPaste(edit, addr rune, 1)
-    consumed += advance
+  if totalLen <= 0: return
+  discard nkTexteditPaste(edit, text, totalLen)
 
 # ---------------------------------------------------------------------------
 # Public API
@@ -149,14 +147,14 @@ proc raddyWireClipboard*(ctx: ptr nk_context) =
   ##   let ctx = raddyBundleCtx(bundle)
   ##   raddyWireClipboard(ctx)  -- enables Ctrl+C/X/V in edit fields
   ##
-  ## Copy handler (Ctrl+C/X): reads the selected UTF-8 bytes, null-terminates,
-  ## and calls SetClipboardText. Selections larger than 4096 bytes are silently
-  ## truncated at a codepoint boundary (the truncation point is wherever the 4096-
-  ## byte limit falls; partial multi-byte sequences are excluded).
+  ## Copy handler (Ctrl+C/X): null-terminates the selected UTF-8 slice and calls
+  ## SetClipboardText. Selections larger than 4096 bytes are truncated at a raw
+  ## byte boundary (most OS APIs accept this silently).
   ##
-  ## Paste handler (Ctrl+V): reads the OS clipboard via GetClipboardText, decodes
-  ## UTF-8 to runes one at a time, and inserts each rune via nk_textedit_paste
-  ## (which uses Nuklear's undo stack). Invalid UTF-8 sequences stop the paste.
+  ## Paste handler (Ctrl+V): fetches the OS clipboard via GetClipboardText and
+  ## passes the raw UTF-8 bytes directly to nk_textedit_paste in a single call
+  ## (replaces selection + records undo atomically). No UTF-8 decode in Nim;
+  ## Nuklear handles the byte string natively.
   ##
   ## Vita note: raddyVitaPump does not feed NK_KEY_COPY/PASTE, so ctx.clip stays
   ## nil on Vita — Nuklear guards every invocation with `if (clip.copy)`, so the

@@ -36,7 +36,7 @@ Backend modules must be imported explicitly by the application. They are never p
 
 **Copy**: copies up to 4096 bytes of selected text to the OS clipboard (larger selections are silently truncated).
 
-**Paste**: reads UTF-8 from the OS clipboard, decodes it rune-by-rune via `nk_utf_decode`, and inserts each rune via `nk_textedit_paste` (preserves Nuklear's undo stack). Invalid UTF-8 stops the paste at the first bad sequence.
+**Paste**: reads UTF-8 from the OS clipboard via `GetClipboardText` and passes the raw byte string directly to `nk_textedit_paste` in a single call. Nuklear replaces any active selection and records the undo entry atomically. No per-rune decoding in Nim — Nuklear handles UTF-8 byte strings natively.
 
 `raddyWireClipboard` is declared in `raddy/backend/pump_naylib` — import it alongside the pump.
 
