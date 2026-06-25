@@ -6,8 +6,10 @@ strategy, known approximations, vita-specific behavior, and testability classifi
 for each command.
 
 All 19 command types are handled — no `else:` branch exists in the dispatch.
-`static: doAssert ord(NK_COMMAND_CUSTOM) == 18` is a compile-time tripwire
-that fires if nuklear.h adds a new type.
+`static: doAssert ord(NK_COMMAND_CUSTOM) == 18` (`render.nim:65-66`) is a
+compile-time tripwire that fires if CUSTOM's ordinal changes (e.g. a type is
+appended or the count shifts). It does NOT catch layout changes that keep CUSTOM
+at ordinal 18 — so the full enum must be re-verified on every nuklear.h bump.
 
 ---
 
@@ -18,7 +20,7 @@ that fires if nuklear.h adds a new type.
 | **raylib call(s)** | Host draw-proc(s) invoked by the handler |
 | **Approximation** | Semantic gap between Nuklear's intent and the raylib output |
 | **Vita status** | `✓` = confirmed present, `?` = needs raddy-tzc check, `no-op` = disabled |
-| **Testable core** | Whether the handler's logic is exercisable without a display |
+| **Testable core** | `yes` = a unit test exists for the extracted pure logic (the computation, not the draw call); `visual` = no extracted pure logic — output is pixels only |
 
 ---
 
@@ -74,7 +76,7 @@ that fires if nuklear.h adds a new type.
 | 10 | `ARC_FILLED` | `DrawCircleSector` | Same angle conversion and normalization as `ARC`. No thickness concept (sector = filled). | likely | yes⁵ |
 
 ⁵ `radToDeg` and angle normalization logic are pure; the angle cancellation reasoning
-is documented inline at `render.nim:249–255`.
+is documented inline at `render.nim:249–250`. Verified in `tests/test_geom.nim`.
 
 ---
 
@@ -101,11 +103,12 @@ Points are accessed via FAM (Flexible Array Member) cast:
 | # | NK_COMMAND | raylib call(s) | Notes | Vita | Testable |
 |---|-----------|----------------|-------|------|----------|
 | 13 | `POLYGON` | `DrawLineStrip` (closed) | Stack buffer capped at `PolyLineMax=64` points. Closing: first point appended to the array → `point_count+1` passed to `DrawLineStrip`. Min 2 points required. | `?` | visual |
-| 14 | `POLYGON_FILLED` | `DrawTriangle` × N | Fan triangulation from vertex 0: triangles `(0,i,i+1)` for `i` in `1..count-2`. **Valid only for convex polygons** — concave inputs draw a wrong shape. Nuklear's widget layer always emits convex polygons. Stack cap `PolyLineMax`. Min 3 points required. | ✓ | yes⁷ |
+| 14 | `POLYGON_FILLED` | `DrawTriangle` × N | Fan triangulation from vertex 0: triangles `(0,i,i+1)` for `i` in `1..count-2`. **Valid only for convex polygons** — concave inputs draw a wrong shape. Nuklear's widget layer always emits convex polygons. Stack cap `PolyLineMax`. Min 3 points required. | ✓ | visual⁷ |
 | 15 | `POLYLINE` | `DrawLineStrip` (open) | Same stack cap as `POLYGON`. Open path: no loop closure. Min 2 points required. | `?` | visual |
 
-⁷ Fan triangulation point arithmetic is exercisable without a display (see `fixTriWinding`
-calls which produce deterministic outputs).
+⁷ The fan index-selection loop `(0,i,i+1)` and the `min(count, PolyLineMax)` cap are pure
+logic, but no dedicated unit test exists yet. `fixTriWinding` (also called here) is tested
+separately in `tests/test_geom.nim`. The fan selection itself is verified by inspection.
 
 ---
 
@@ -113,9 +116,12 @@ calls which produce deterministic outputs).
 
 | # | NK_COMMAND | raylib call(s) | Notes | Vita | Testable |
 |---|-----------|----------------|-------|------|----------|
-| 16 | `TEXT` | `DrawTextEx` (via `rlDrawTextEx`) | Text is NOT null-terminated in the command — `copyMem` + manual null terminator into a stack buffer (`RaddyMaxTextBytes=1024`). Font nil-checked (`nk_user_font.userdata.ptr` holds the `ptr RFont` set by `raddyInitFont`). Oversize payloads truncated to 1023 bytes with a one-time log. UTF-8 truncation at an arbitrary byte can split multi-byte codepoints (i18n follow-up). `tc.background` is intentionally ignored — Nuklear pre-fills it as a `RECT_FILLED` command. | `?` (naming: rlDrawTextEx / DrawTextEx) | yes⁸ |
+| 16 | `TEXT` | `DrawTextEx` (via `rlDrawTextEx`) | Text is NOT null-terminated in the command — `copyMem` + manual null terminator into a stack buffer (`RaddyMaxTextBytes=1024`). Font nil-checked (`nk_user_font.userdata.ptr` holds the `ptr RFont` set by `raddyInitFont`). Oversize payloads truncated to 1023 bytes with a one-time log. UTF-8 truncation at an arbitrary byte can split multi-byte codepoints (i18n follow-up). `tc.background` is intentionally ignored — Nuklear pre-fills it as a `RECT_FILLED` command. | `?` (naming: rlDrawTextEx / DrawTextEx) | visual⁸ |
 
-⁸ The copyMem+null-termination logic and font nil-guard are testable in `tests/test_render.nim`.
+⁸ `tests/test_render.nim` smoke-tests `raddyRender` on an empty context; it pushes no NK
+commands, so the copyMem/nil-guard logic is not exercised by any current test. The
+analogous truncation arithmetic in `raddyMeasureWidth` is tested in `tests/test_font.nim`
+but covers different code.
 
 ---
 
@@ -123,7 +129,10 @@ calls which produce deterministic outputs).
 
 | # | NK_COMMAND | raylib call(s) | Notes | Vita | Testable |
 |---|-----------|----------------|-------|------|----------|
-| 17 | `IMAGE` | `DrawTextureRec` | `nk_image.handle.ptr` must hold a `ptr RTexture` (integer handle `handle.id` is not supported). `region[0..3]` = `[x, y, w, h]` sub-rectangle; zero `w` or `h` falls back to full texture dimension. texPtr nil-checked. | likely | yes⁸ |
+| 17 | `IMAGE` | `DrawTextureRec` | `nk_image.handle.ptr` must hold a `ptr RTexture` (integer handle `handle.id` is not supported). `region[0..3]` = `[x, y, w, h]` sub-rectangle; zero `w` or `h` falls back to full texture dimension. texPtr nil-checked. | likely | visual⁹ |
+
+⁹ No IMAGE handler tests exist. The `region[0..3]` zero-w/h fallback and nil-guard
+are pure index/dimension logic, but neither is exercised by any current test file.
 
 ---
 
@@ -139,9 +148,9 @@ calls which produce deterministic outputs).
 
 | Category | Commands | Desktop | Vita |
 |----------|----------|---------|------|
-| Implemented, full fidelity | NOP, SCISSOR, LINE, RECT, RECT_FILLED, TRIANGLE, TRIANGLE_FILLED, POLYLINE, TEXT, IMAGE, CUSTOM | ✓ | ✓ or ? |
+| Implemented, full fidelity | NOP, SCISSOR, LINE, RECT, RECT_FILLED, TRIANGLE, TRIANGLE_FILLED, TEXT, IMAGE, CUSTOM | ✓ | ✓ or ? |
 | Implemented with approximation | CURVE (tessellated Bézier), RECT_MULTI_COLOR (edge→corner), POLYGON_FILLED (fan, convex-only) | ✓ | ? |
-| Implemented, vita partial | CIRCLE/CIRCLE_FILLED (ellipse branch is no-op), ARC/ARC_FILLED (DrawRing needs check), POLYGON (DrawLineStrip needs check) | ✓ | see above |
+| Implemented, vita partial | CIRCLE/CIRCLE_FILLED (ellipse branch is no-op), ARC/ARC_FILLED (DrawRing needs check), POLYGON/POLYLINE (DrawLineStrip needs check) | ✓ | see above |
 | Intentional no-op | — | — | — |
 
 ### Constants referenced
