@@ -76,9 +76,21 @@ type
 # ---------------------------------------------------------------------------
 
 type
+  ## C `const char*`. Distinct codegen from Nim's `cstring` (which emits a
+  ## non-const `char*`): the importc spelling makes width-callback function
+  ## pointers match Nuklear's nk_text_width_f typedef
+  ## (`float(*)(nk_handle, float, const char*, int)`, nuklear.h) at the C level,
+  ## so no `-Wno-error=incompatible-function-pointer-types` flag is needed (and
+  ## downstream consumers who C-compile src/ under Apple clang build clean too).
+  ## Aliased to `cstring`, so Nim-level use (nil-check, copyMem) is unchanged.
+  ## Intended for the const-char callback PARAMETER position only — the importc
+  ## spelling substitutes textually, so derived forms (e.g. `ptr cstringConst`,
+  ## arrays) would emit surprising types; use a purpose-built type for those.
+  cstringConst* {.importc: "const char*", nodecl.} = cstring
+
   ## Width callback: (userdata, font_height, text_ptr, text_byte_len) -> pixel width
   nk_text_width_f* =
-    proc(handle: nk_handle; h: float32; text: cstring; len: cint): float32 {.cdecl.}
+    proc(handle: nk_handle; h: float32; text: cstringConst; len: cint): float32 {.cdecl.}
 
   nk_user_font* {.importc: "struct nk_user_font", header: nkH.} = object
     userdata*: nk_handle       ## opaque handle forwarded to `width`

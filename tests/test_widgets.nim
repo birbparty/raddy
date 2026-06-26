@@ -21,7 +21,7 @@ import raddy/input    ## raddyInputBegin, raddyInputEnd
 # Helper: minimal per-test context
 # ---------------------------------------------------------------------------
 
-proc stubWidth(handle: nk_handle; h: float32; text: cstring; len: cint): float32
+proc stubWidth(handle: nk_handle; h: float32; text: cstringConst; len: cint): float32
     {.cdecl.} = float32(len) * 8.0
   ## Stub font metric: 8 px per character. Nuklear requires a non-nil width
   ## callback before nk_begin; this dummy satisfies that contract without

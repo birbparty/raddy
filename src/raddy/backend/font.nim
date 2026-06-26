@@ -49,7 +49,7 @@ proc measureTextEx(font: RFont; text: cstring; fontSize, spacing: float32): RVec
 # Width callback — registered as nk_user_font.width
 # ---------------------------------------------------------------------------
 
-proc raddyMeasureWidth*(handle: nk_handle; h: float32; text: cstring; len: cint): float32
+proc raddyMeasureWidth*(handle: nk_handle; h: float32; text: cstringConst; len: cint): float32
     {.cdecl, gcsafe, raises: [].} =
   ## Called by Nuklear to measure text width.
   ## Signature matches nk_text_width_f exactly (float32, not cfloat) so the
@@ -66,6 +66,9 @@ proc raddyMeasureWidth*(handle: nk_handle; h: float32; text: cstring; len: cint)
   if fontPtr == nil: return 0.0f32
   var buf: array[RaddyMaxTextBytes, char]
   let copyLen = min(int(len), RaddyMaxTextBytes - 1)
+  ## `text` is `cstringConst` (-> `const char*`); copyMem's src is `pointer`, so
+  ## Nim emits an explicit `(void*)` cast and the const is dropped without a
+  ## const-discard diagnostic. We only READ from `text` here, so this is sound.
   copyMem(addr buf[0], text, copyLen)
   buf[copyLen] = '\0'
   let measured = measureTextEx(fontPtr[], cast[cstring](addr buf[0]), h, RaddyMeasureSpacing)

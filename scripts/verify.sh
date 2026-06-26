@@ -160,12 +160,11 @@ if [[ -z "$NIMLIB_SW" ]]; then
   echo "  ERROR: could not extract Nim stdlib include path from verify_vita_switch.json" >&2
   exit 1
 fi
-# raddyInitFont's nk_text_width_f assignment trips Apple clang's default-error
-# -Wincompatible-function-pointer-types; demote it exactly as nim.cfg does on osx
-# (the macOS-only spelling — Linux gcc neither needs nor knows it). See raddy-u7d.
-SW_FNPTR_FLAG=""
-[[ "$(uname)" == "Darwin" ]] && SW_FNPTR_FLAG="-Wno-error=incompatible-function-pointer-types"
-gcc -std=c99 -fsyntax-only -w ${SW_FNPTR_FLAG} \
+# No fn-ptr-compat flag needed: raddy's callback proc types now emit
+# const-qualified C pointers that match Nuklear's typedefs at the source
+# (cstringConst / NkPluginFilter importc — see raddy-u7d). -w keeps this
+# syntax-only pass quiet without masking that guard in the real clang builds.
+gcc -std=c99 -fsyntax-only -w \
   -Itests/stubs \
   -I"$NIMLIB_SW" \
   -Isrc/raddy/vendor \
@@ -257,6 +256,31 @@ fi
 nim c --mm:orc --hints:off --path:src --path:"$BDDY_DIR_SMOKE" \
   -d:raddyFixed \
   -r tests/test_smoke_headless.nim
+
+# raddy-u7d regression guard: force the fn-ptr-compat diagnostic to a HARD error
+# so a future refactor that drops cstringConst / the NkPluginFilter importc binding
+# (re-introducing a const char* / const struct* callback mismatch) fails loudly
+# here instead of silently re-needing a suppression. test_widgets exercises both
+# the width-callback field assignment and the nk_plugin_filter accessors.
+#
+# DARWIN-GATED (matching the script's established pattern): the precise diagnostic
+# name 'incompatible-function-pointer-types' is the Apple-clang spelling — GNU gcc
+# has no warning by that name (it folds fn-ptr mismatches under the broader
+# 'incompatible-pointer-types'), so passing this -Werror= to gcc would either
+# hard-fail on an unknown option or be inert. Apple clang is also the compiler
+# that promotes this to a default error and motivated raddy-u7d, so a Darwin gate
+# still delivers the guard on the primary dev platform. The const-correctness
+# property is exercised on EVERY platform by 'nimble test' below; this step only
+# promotes it to a hard error on Darwin.
+echo "==> verify: fn-ptr const-correctness regression guard (-Werror, raddy-u7d)"
+if [[ "$(uname)" == "Darwin" ]]; then
+  nim c --mm:orc --hints:off --path:src --path:"$BDDY_DIR_SMOKE" \
+    ${NAYLIB_PASSC} \
+    --passC:"-Werror=incompatible-function-pointer-types" \
+    -r tests/test_widgets.nim
+else
+  echo "    (skipped: clang-spelling flag is Darwin-gated; nimble test still exercises the callbacks)"
+fi
 
 echo "==> verify: nimble test"
 nimble test
