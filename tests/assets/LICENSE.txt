@@ -10,9 +10,12 @@ Source:   Unscii by Viljo Eriksson (viznut)
           Path in upstream repo: fontfiles/unscii-16.ttf
 Recorded: 2026-06-26
 MD5:      bb0cf2291498cd53cf3972b155d51a67
+SHA-256:  2f6b0bbf8c7e435a4fbda14da11677eed751f3a4ed470af4f4f06e9a8bc509db
 
 License:  PUBLIC DOMAIN (CC0)
 ----------------------------
+CC0 1.0 Universal deed: https://creativecommons.org/publicdomain/zero/1.0/
+
 Per the Unscii README, the project is Public Domain (CC-0) EXCEPT for the files
 derived from or containing parts of Roman Czyborra's GNU Unifont project
 (unifont.hex, hex2bdf.pl, and the `unscii-16-full.*` variants), which are GPL.
@@ -36,3 +39,9 @@ acceptance spec (raddy-8an.9), which DEPENDS on this bead. That on-device/human
 visual sign-off is therefore deferred to raddy-8an.9's acceptance gate; this
 asset provides a valid, redistributable, structurally-correct TrueType file for
 that spec to load at two distinct ppem.
+
+Functional bake check (headless, raddy-8an.3): raylib loadFont succeeds at 16 px
+and 32 px — texture baked (texture.id != 0), 95 glyphs, clean 8 px monospace
+cell (MeasureTextEx("Width!") = 58.0 @16px / 106.0 @32px). This confirms the
+file is loadable and metrically sound; it is NOT the visual legibility sign-off,
+which remains gated at raddy-8an.9.
