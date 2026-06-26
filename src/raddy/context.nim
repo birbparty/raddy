@@ -40,6 +40,34 @@ proc nk_clear*(ctx: ptr nk_context) {.importc: "nk_clear", header: nkH.}
   ## Reset the command queue for the next frame.
   ## MUST be called AFTER raddyRender() drains the queue and BEFORE nk_input_begin().
 
+proc nk_style_set_font*(ctx: ptr nk_context; font: ptr nk_user_font)
+    {.importc: "nk_style_set_font", header: nkH.}
+  ## Core nuklear font switch. Always compiled (no default-allocator gate, unlike
+  ## nk_init_default), so it is desktop + Vita safe with no when-not-defined(vita).
+  ## Sets ctx.style.font directly and resets the font stack head (non-scoped).
+
+# ---------------------------------------------------------------------------
+# Font switching (core wrapper)
+# ---------------------------------------------------------------------------
+
+proc setRaddyFont*(ctx: ptr nk_context; font: ptr nk_user_font) {.raises: [].} =
+  ## Switch the active Nuklear font.
+  ##
+  ## Thin core wrapper over nk_style_set_font. Forward-only and NON-scoped:
+  ## the change affects only widgets emitted AFTER this call, and only within
+  ## the SAME nk_begin/nk_end pass it is issued in. It is not stacked — the font
+  ## persists forward until the next setRaddyFont. A mid-frame switch is fully
+  ## supported (nuklear resets the current layout's min row height on switch).
+  ##
+  ## `font` must outlive every frame in which it is the active font (the
+  ## font→context lifetime invariant; this proc does not take ownership).
+  ## A nil `font` is a no-op at the C level (nk_style_set_font guards ctx, not
+  ## font), so callers must pass a live nk_user_font built via the backend.
+  ##
+  ## Decoupled-core safe: takes a raw ptr nk_user_font, imports no backend module.
+  if ctx == nil: return
+  nk_style_set_font(ctx, font)
+
 # ---------------------------------------------------------------------------
 # Per-session sentinel flags (module-level, one per process; single-context assumption)
 # ---------------------------------------------------------------------------

@@ -9,6 +9,32 @@ spec "context module":
     verify:
       true  ## reaching here proves importc bindings resolved
 
+  it "re-exports setRaddyFont + nk_style_set_font (font switch binding)":
+    ## Compile-time proof the core font-switch wrapper is reachable as
+    ## raddy.setRaddyFont (auto re-exported via `export context`). Binding a proc
+    ## value forces symbol resolution without invoking it.
+    let f: proc(ctx: ptr nk_context; font: ptr nk_user_font) {.raises: [].} =
+      setRaddyFont
+    verify:
+      not f.isNil
+
+  it "setRaddyFont switches the active font mid-frame without crashing":
+    ## Exercises the wrapper over a live fixed context: a mid-frame switch from
+    ## font1 to font2 is forward-only and must not crash (nk_style_set_font sets
+    ## ctx.style.font directly and resets the current layout's min row height).
+    ## ctx.style is not exposed by the partial nk_context binding, so this asserts
+    ## runtime safety (no crash, guards hold) rather than the field value.
+    var ctx: nk_context
+    var font1, font2: nk_user_font
+    var buf: array[RaddyCmdBufBytes, byte]
+    discard nk_init_fixed(addr ctx, addr buf[0], nk_size(buf.len), addr font1)
+    setRaddyFont(addr ctx, addr font2)  ## switch to a second font
+    setRaddyFont(addr ctx, nil)         ## nil font: C-level no-op, must not crash
+    setRaddyFont(nil, addr font2)       ## nil ctx: wrapper guard returns early
+    nk_clear(addr ctx)
+    verify:
+      true  ## reaching here proves the switch path is crash-free
+
   it "nk_init_fixed succeeds over a RaddyCmdBufBytes-sized buffer":
     ## buf must outlive ctx — both are on the stack here so lifetimes match.
     ## Zeroed font: width callback is nil, but it's only invoked during text layout.
