@@ -260,15 +260,27 @@ nim c --mm:orc --hints:off --path:src --path:"$BDDY_DIR_SMOKE" \
 # raddy-u7d regression guard: force the fn-ptr-compat diagnostic to a HARD error
 # so a future refactor that drops cstringConst / the NkPluginFilter importc binding
 # (re-introducing a const char* / const struct* callback mismatch) fails loudly
-# here instead of silently re-needing a -Wno-error suppression. test_widgets
-# exercises both the width-callback field assignment and the nk_plugin_filter
-# accessors. Apple clang already defaults this to an error, but the explicit flag
-# makes the guard portable to gcc/older clang. See raddy-u7d.
+# here instead of silently re-needing a suppression. test_widgets exercises both
+# the width-callback field assignment and the nk_plugin_filter accessors.
+#
+# DARWIN-GATED (matching the script's established pattern): the precise diagnostic
+# name 'incompatible-function-pointer-types' is the Apple-clang spelling — GNU gcc
+# has no warning by that name (it folds fn-ptr mismatches under the broader
+# 'incompatible-pointer-types'), so passing this -Werror= to gcc would either
+# hard-fail on an unknown option or be inert. Apple clang is also the compiler
+# that promotes this to a default error and motivated raddy-u7d, so a Darwin gate
+# still delivers the guard on the primary dev platform. The const-correctness
+# property is exercised on EVERY platform by 'nimble test' below; this step only
+# promotes it to a hard error on Darwin.
 echo "==> verify: fn-ptr const-correctness regression guard (-Werror, raddy-u7d)"
-nim c --mm:orc --hints:off --path:src --path:"$BDDY_DIR_SMOKE" \
-  ${NAYLIB_PASSC} \
-  --passC:"-Werror=incompatible-function-pointer-types" \
-  -r tests/test_widgets.nim
+if [[ "$(uname)" == "Darwin" ]]; then
+  nim c --mm:orc --hints:off --path:src --path:"$BDDY_DIR_SMOKE" \
+    ${NAYLIB_PASSC} \
+    --passC:"-Werror=incompatible-function-pointer-types" \
+    -r tests/test_widgets.nim
+else
+  echo "    (skipped: clang-spelling flag is Darwin-gated; nimble test still exercises the callbacks)"
+fi
 
 echo "==> verify: nimble test"
 nimble test
