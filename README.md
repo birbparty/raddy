@@ -74,12 +74,13 @@ proc main() =
 main()
 ```
 
-## Multi-size fonts & font switching
+## Multi-size fonts and font switching
 
 raddy renders at multiple font sizes in one UI by switching the active Nuklear
 font between widget groups. Bake **one `Font` per pixel size** (do not scale a
 single atlas — it blurs), wrap each in a caller-owned `RaddyFont`, and switch
-with `setRaddyFont` (or `raddyBundleSetFont` for a `RaddyCtxBundle`):
+with `setRaddyFont` (handle form) or `raddyBundleSetFont` (bundle form — see
+below):
 
 ```nim
 import raddy
@@ -94,24 +95,35 @@ var smallRf, largeRf: RaddyFont
 proc loadFonts() =               # call after initWindow (baking needs a GL context)
   small = loadFont("my.ttf", 16, 0)
   large = loadFont("my.ttf", 32, 0)
-  # RFont is a distinct Nim alias for raylib's Font (same C struct) — bridge the
-  # ptr with cast[ptr RFont]. Pass the bake ppem (baseSize) as the pixel height.
+  # RFont is raddy's separate Nim view of raylib's Font (same C struct, distinct
+  # Nim identity) — bridge the ptr with cast[ptr RFont]. Pass the bake ppem
+  # (baseSize) as the pixel height: it MUST equal the size the font was baked at,
+  # or measure and draw diverge and text clips/overflows.
   smallRf = raddyMakeFont(cast[ptr RFont](addr small), float32(small.baseSize))
   largeRf = raddyMakeFont(cast[ptr RFont](addr large), float32(large.baseSize))
 
-# Per frame, inside raddyBegin/raddyEnd:
-setRaddyFont(ctx, raddyFontHandle(smallRf))   # forward-only; everything next is 16 px
+# Per frame, inside raddyBegin/raddyEnd. `ctx` is raddyBundleCtx(bundle) from the
+# Quickstart above.
+setRaddyFont(ctx, raddyFontHandle(smallRf))   # smallRf active; everything next is 16 px
 raddyLabel(ctx, "small")
-setRaddyFont(ctx, raddyFontHandle(largeRf))   # mid-frame switch is supported
+setRaddyFont(ctx, raddyFontHandle(largeRf))   # mid-frame switch is supported → 32 px
 raddyLabel(ctx, "BIG")
 ```
 
+If you hold the bundle (not a raw `ctx`), the bundle form switches the same way
+but takes the `RaddyFont` **value** rather than a handle:
+
+```nim
+raddyBundleSetFont(bundle, largeRf)   # equivalent to setRaddyFont(raddyBundleCtx(bundle), raddyFontHandle(largeRf))
+```
+
 The switch is **forward-only** (affects only widgets emitted after it) and
-**persists across frames** (`nk_clear` does not reset it — re-set each frame if
-you want a deterministic starting font). A single-size app just bakes one font;
-the machinery is additive. See
+**persists across frames** (the per-frame clear, `nk_clear`, does not reset it —
+re-set each frame if you want a deterministic starting font). A single-size app
+just bakes one font; the machinery is additive. See
 [docs/prompts/font-contract.md](docs/prompts/font-contract.md) for the full
-lifetime contract.
+lifetime contract (the fonts and `RaddyFont`s must stay at a stable address —
+no frame-loop locals, no reallocating `seq` storage — until after `raddyRender`).
 
 ## Building
 
