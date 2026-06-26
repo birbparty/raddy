@@ -43,3 +43,35 @@ task check, "Type-check library entry point":
 
 task check_vita, "Type-check for PS Vita (-d:vita)":
   exec "nim check --mm:arc --hints:off --path:src -d:vita src/raddy.nim"
+
+task acceptance, "Run the real-raylib acceptance spec (needs a GL context)":
+  # SEPARATE from `test`: links REAL raylib (naylib) and opens a hidden GL
+  # window, so it is NOT part of the stubbed `nimble test`. The spec file is
+  # tests/acceptance_smoke.nim (no `test_` substring → never caught by the
+  # test-task glob). See docs/prompts/acceptance-test-model.md (raddy-8an.2).
+  let home = getEnv("HOME")
+  # bddy (spec framework) — same discovery as the `test` task.
+  let (bddyRaw, bddyCode) = gorgeEx(
+    "find " & home & "/.nimble/pkgs2 -maxdepth 1 -name 'bddy-*' -type d")
+  let bddyDirs = bddyRaw.strip().splitLines()
+  if bddyCode != 0 or bddyDirs.len == 0 or bddyDirs[0].len == 0:
+    quit "raddy acceptance: bddy not found — run: nimble install bddy"
+  if bddyDirs.len > 1:
+    echo "raddy acceptance: WARNING multiple bddy-* dirs, using " & bddyDirs[0]
+  let bddyDir = bddyDirs[0]
+  # naylib (REAL raylib) — adding it to --path makes `import raylib` resolve to
+  # naylib's module (which compiles + links the raylib C library), instead of
+  # the emit stubs the `test` task relies on.
+  let (naylibRaw, naylibCode) = gorgeEx(
+    "find " & home & "/.nimble/pkgs2 -maxdepth 1 -name 'naylib-*' -type d")
+  let naylibDirs = naylibRaw.strip().splitLines()
+  if naylibCode != 0 or naylibDirs.len == 0 or naylibDirs[0].len == 0:
+    quit "raddy acceptance: naylib not found — run: nimble install naylib"
+  if naylibDirs.len > 1:
+    echo "raddy acceptance: WARNING multiple naylib-* dirs, using " & naylibDirs[0]
+  let naylibDir = naylibDirs[0]
+  let flags = "--mm:orc --hints:off --path:src" &
+              " --path:" & bddyDir &
+              " --path:" & naylibDir &
+              " --passC:\"-I" & naylibDir & "/raylib\""
+  exec "nim c " & flags & " -r tests/acceptance_smoke.nim"
