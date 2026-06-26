@@ -44,6 +44,13 @@ type
     ## PARTIAL VIEW. rlDrawTextEx receives Font by value (C ABI: stack copy).
     ## Nuklear stores only a pointer to the underlying font data — raddy's
     ## font.nim owns the RFont and must outlive the nk_context.
+    ##
+    ## Only `texture` is declared (for load-failure detection via raddyFontLoaded);
+    ## the remaining Font fields (baseSize, glyphCount, recs, glyphs, …) are
+    ## intentionally omitted. Field access resolves offsets through raylib.h at the
+    ## C level, so the partial view is safe — but the "do NOT sizeof/copy/move from
+    ## Nim" rule still stands (the layout here is incomplete).
+    texture*: RTexture  ## glyph atlas; texture.id == 0 means the font failed to bake
 
   RTexture* {.importc: "Texture2D", header: raylibH.} = object
     ## PARTIAL VIEW. Only id/width/height are accessed by raddy.
@@ -52,6 +59,30 @@ type
     height*:  int32
     mipmaps*: int32
     format*:  int32
+
+# ---------------------------------------------------------------------------
+# Font load-failure detection
+# ---------------------------------------------------------------------------
+
+proc raddyFontLoaded*(fontPtr: ptr RFont): bool {.inline, raises: [].} =
+  ## True only if the font baked a glyph-atlas texture (texture.id != 0).
+  ##
+  ## raylib's LoadFont* returns a Font BY VALUE even when the TTF fails to bake
+  ## (missing file, unsupported format, no GL context): the Font pointer is valid
+  ## but its texture.id stays 0 and no glyph renders. So a non-nil fontPtr is NOT
+  ## sufficient to know text will draw — callers must also check this signal.
+  ##
+  ## Lives here, the module that OWNS RFont/RTexture, so the only field-level
+  ## dependency on the partial Font layout stays in one place. font.nim imports
+  ## RFont but deliberately stays agnostic of its texture layout and delegates
+  ## load-detection to this helper.
+  ##
+  ## Assumes LoadFont* leaves texture.id == 0 on bake failure (raylib contract);
+  ## Vita console-port runtime zero-on-failure to be confirmed on-device (raddy-5ce).
+  ##
+  ## nil fontPtr => false (nothing loaded). Never raises, never dereferences nil.
+  if fontPtr == nil: return false
+  fontPtr.texture.id != 0'u32
 
 # ---------------------------------------------------------------------------
 # Filled and outlined geometry

@@ -69,6 +69,48 @@ spec "raddyBundleCreate":
     verify:
       bundle.nkFont.userdata.`ptr` == cast[pointer](addr dummyFont)
 
+  it "fontLoaded is false when fontPtr is nil":
+    var bundle = raddyBundleCreate(nil, 32.0f)
+    verify:
+      bundle.fontLoaded == false
+
+  it "fontLoaded is false when texture.id == 0 (TTF failed to bake)":
+    ## A zero-initialised RFont mimics raylib returning a Font whose atlas never
+    ## baked: fontOk is true (ptr non-nil) but fontLoaded is false. This is the
+    ## exact gap this signal closes.
+    var dummyFont: RFont          ## texture.id defaults to 0
+    var bundle = raddyBundleCreate(addr dummyFont, 32.0f)
+    verify:
+      bundle.fontOk == true and bundle.fontLoaded == false
+
+  it "fontLoaded is true when texture.id != 0 (atlas baked)":
+    var dummyFont: RFont
+    dummyFont.texture.id = 7'u32  ## non-zero GL texture id == successfully baked
+    var bundle = raddyBundleCreate(addr dummyFont, 32.0f)
+    verify:
+      bundle.fontOk == true and bundle.fontLoaded == true
+
+# ---------------------------------------------------------------------------
+# raddyFontLoaded — texture.id load-failure detector (raylib_api.nim)
+# ---------------------------------------------------------------------------
+
+spec "raddyFontLoaded":
+
+  it "returns false for a nil fontPtr (nothing loaded, no deref)":
+    verify:
+      raddyFontLoaded(nil) == false
+
+  it "returns false when texture.id == 0 (font failed to bake)":
+    var f: RFont                  ## zero-initialised → texture.id == 0
+    verify:
+      raddyFontLoaded(addr f) == false
+
+  it "returns true when texture.id != 0 (atlas present)":
+    var f: RFont
+    f.texture.id = 1'u32
+    verify:
+      raddyFontLoaded(addr f) == true
+
 spec "raddyBundleCtx":
 
   it "returns non-nil ctx pointer":
