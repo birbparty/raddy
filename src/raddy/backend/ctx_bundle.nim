@@ -22,10 +22,10 @@
 ##   raddyBundleFree(bundle)
 
 import ../types    ## nk_context, nk_user_font, nk_bool, nk_size
-import ../context  ## raddyCtxInit, raddyCtxFree, raddyCtxClear
+import ../context  ## raddyCtxInit, raddyCtxFree, raddyCtxClear, setRaddyFont
 import ../errors   ## RaddyCmdBufBytes, raddyLog
-import ./raylib_api ## RFont (ptr only — font is caller-owned)
-import ./font      ## raddyInitFont
+import ./raylib_api ## RFont (ptr only — font is caller-owned), raddyFontLoaded
+import ./font      ## raddyInitFont, RaddyFont, raddyFontHandle
 
 # ---------------------------------------------------------------------------
 # Bundle type
@@ -106,6 +106,31 @@ proc raddyBundleClear*(bundle: RaddyCtxBundle; bufOverflow: var bool) {.inline, 
   ## Call at the end of each frame after the command queue has been consumed.
   ## Delegates to raddyCtxClear which checks for command-buffer overflow on vita/raddyFixed.
   raddyCtxClear(addr bundle.ctx, bufOverflow)
+
+proc raddyBundleSetFont*(bundle: RaddyCtxBundle; font: var RaddyFont) {.inline, raises: [].} =
+  ## Switch the bundle's ACTIVE Nuklear font to a caller-owned RaddyFont.
+  ##
+  ## Thin, additive wrapper over setRaddyFont(addr bundle.ctx, raddyFontHandle(font)).
+  ## The bundle's inline nkFont stays the default/initial font wired at
+  ## raddyBundleCreate; this does NOT replace it or store `font` in the bundle.
+  ## Forward-only, exactly like setRaddyFont: it affects only widgets emitted AFTER
+  ## the call. It is written to the GLOBAL ctx.style.font, so it also carries to
+  ## later windows in the same frame and persists across frames until the next
+  ## switch (nk_clear does not reset ctx.style.font).
+  ##
+  ## LIFETIME: `font` is taken as `var RaddyFont` — NOT by value — on purpose.
+  ## raddyFontHandle returns `addr font.nkFont`, which Nuklear stores and then
+  ## dereferences every frame text is laid out until the next switch. Taking the
+  ## address of a by-value parameter copy would dangle the instant this proc
+  ## returns. The caller must therefore hold `font` at a STABLE address (a global
+  ## or long-lived field) for as long as it stays active — the RaddyFont lifetime
+  ## contract in font.nim. Multi-size UIs keep one RaddyFont per size and switch
+  ## between them with this helper.
+  ##
+  ## A nil bundle is ignored (no context to switch); setRaddyFont additionally
+  ## guards a nil ctx/font internally.
+  if bundle == nil: return
+  setRaddyFont(addr bundle.ctx, raddyFontHandle(font))
 
 # ---------------------------------------------------------------------------
 # Teardown
