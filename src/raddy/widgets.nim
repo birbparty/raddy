@@ -65,10 +65,18 @@ type
 # nk_plugin_filter type alias
 # ---------------------------------------------------------------------------
 
-type NkPluginFilter* = proc(edit: pointer; unicode: nk_rune): nk_bool {.cdecl.}
+type NkPluginFilter* {.importc: "nk_plugin_filter", header: nkH.} =
+  proc(edit: pointer; unicode: nk_rune): nk_bool {.cdecl.}
   ## Text-input filter callback. `edit` is an OPAQUE `const nk_text_edit*` —
   ## do NOT dereference or write through it. Custom filters should decide based
   ## on `unicode` alone. Prefer the built-in nkFilter* accessors.
+  ##
+  ## Bound to Nuklear's `nk_plugin_filter` typedef
+  ## (`nk_bool(*)(const struct nk_text_edit*, nk_rune)`) via importc so the
+  ## emitted C function-pointer type carries the `const` qualifier and matches
+  ## Nuklear at the C level — no fn-ptr-compat compiler flag needed. The Nim
+  ## `edit: pointer` shape is the type-check view only; the C type comes from
+  ## the header.
   ## Pass nil to accept any character (Nuklear substitutes nk_filter_default).
 
 # ---------------------------------------------------------------------------

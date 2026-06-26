@@ -49,7 +49,7 @@ proc measureTextEx(font: RFont; text: cstring; fontSize, spacing: float32): RVec
 # Width callback — registered as nk_user_font.width
 # ---------------------------------------------------------------------------
 
-proc raddyMeasureWidth*(handle: nk_handle; h: float32; text: cstring; len: cint): float32
+proc raddyMeasureWidth*(handle: nk_handle; h: float32; text: cstringConst; len: cint): float32
     {.cdecl, gcsafe, raises: [].} =
   ## Called by Nuklear to measure text width.
   ## Signature matches nk_text_width_f exactly (float32, not cfloat) so the

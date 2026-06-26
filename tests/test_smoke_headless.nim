@@ -28,7 +28,7 @@ import raddy/context  ## intentional: documents which procs come from context.ni
 # Shared helpers
 # ---------------------------------------------------------------------------
 
-proc stubWidth(handle: nk_handle; h: float32; text: cstring; len: cint): float32
+proc stubWidth(handle: nk_handle; h: float32; text: cstringConst; len: cint): float32
     {.cdecl.} =
   discard handle; discard h; discard text
   float32(len) * 8.0
