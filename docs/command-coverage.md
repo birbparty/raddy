@@ -42,9 +42,21 @@ while cmd != nil:
 | NK_COMMAND_POLYGON | implemented | Edge iteration (DrawLine between consecutive vertices). |
 | NK_COMMAND_POLYGON_FILLED | implemented | Fan tessellation from vertex[0]. Convex polygons only. point_count < 3 guard. |
 | NK_COMMAND_POLYLINE | implemented | Open polyline via DrawLineStrip. Stack buffer, MaxPolyPts=64. |
-| NK_COMMAND_TEXT | implemented | Stack-allocated buffer, uses cmd.height for font size, spacing=2.0. No Nim string heap allocation. |
+| NK_COMMAND_TEXT | implemented | Stack-allocated buffer; font size = `cmd.height`, spacing = `RaddyMeasureSpacing` (2.0). Per-command font read from `cmd.font.userdata.ptr` (nil → skip draw). No Nim string heap allocation. |
 | NK_COMMAND_IMAGE | best-effort | Uses RTexture/RColor type aliases. Caller must embed the texture pointer in the nk_image handle. |
 | NK_COMMAND_CUSTOM | logged no-op | Logs a warning once per context, then silently skips. Does not crash. |
+
+### NK_COMMAND_TEXT under multi-size font switching
+
+The `fontSize = cmd.height, spacing = 2.0` rule **still holds** after the
+multi-size switch API (`setRaddyFont` / `raddyBundleSetFont`). Nuklear stamps the
+**active** font and its height into each text command at emit time, so under
+switching `cmd.height` simply *varies per command group* instead of being one
+global value. The handler stays correct because it reads size and font
+**per command**: `cmd.height` for the draw size and `cmd.font.userdata.ptr` for
+the `RFont` (skipping the draw when that pointer is nil). Spacing remains the
+shared `RaddyMeasureSpacing` constant (2.0) used by both measure and draw — see
+`font-contract.md`.
 
 ## Popup / combo / tooltip scissor model
 
