@@ -37,6 +37,9 @@ type RaddyCtxBundle* {.acyclic.} = ref object
   nkFont*:  nk_user_font
   ctx*:     nk_context
   fontOk*:  bool  ## true if raddyInitFont succeeded (fontPtr was non-nil)
+  fontLoaded*: bool  ## true if the font baked a glyph atlas (texture.id != 0).
+                     ## STRONGER than fontOk: a non-nil font whose TTF failed to
+                     ## bake has fontOk==true but fontLoaded==false (no glyphs).
   ctxOk*:   bool  ## true if raddyCtxInit succeeded; false = UI non-functional
   freed:    bool  ## sentinel: raddyBundleFree sets this; guards against double-free
   when defined(vita) or defined(raddyFixed):
@@ -63,6 +66,13 @@ proc raddyBundleCreate*(fontPtr: ptr RFont; fontPixelSize: float32): RaddyCtxBun
   bundle.fontOk = fontPtr != nil
   if not bundle.fontOk:
     raddyLog("raddyBundleCreate: fontPtr is nil — text will not render")
+
+  # Stronger, additive signal: a non-nil font can still have failed to bake its
+  # glyph atlas (texture.id == 0), in which case text silently will not render.
+  # fontOk keeps its exact semantic (fontPtr != nil); fontLoaded adds the bake check.
+  bundle.fontLoaded = raddyFontLoaded(fontPtr)
+  if bundle.fontOk and not bundle.fontLoaded:
+    raddyLog("raddyBundleCreate: font texture.id == 0 — TTF failed to bake, text will not render")
 
   # Always call raddyInitFont even when fontPtr is nil: it wires up the width
   # callback (raddyMeasureWidth) which self-guards against a nil font ptr.
