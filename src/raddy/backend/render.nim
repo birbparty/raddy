@@ -39,7 +39,7 @@ import ../errors   ## raddyLog
 import ./raylib_api ## rDraw* procs, RColor, RVec2, RRect, RFont, RTexture
 import ./geom      ## toRColor, rectRoundness, RoundedRectSegs, BezierSegs, ArcSegs,
                    ## PolyLineMax, bezierTessellate, radToDeg, fixTriWinding
-import ./scissor   ## scissorYFlip
+## scissor.nim is no longer imported: BeginScissorMode handles FBO Y-flip internally.
 import ./font      ## RaddyMeasureSpacing
 
 const nkH = "nuklear.h"
@@ -89,12 +89,11 @@ proc raddyRender*(ctx: ptr nk_context; framebufferH: int32;
   ## Drain the Nuklear command queue and dispatch draw calls to raylib.
   ##
   ## ctx:         pointer to the nk_context (from raddyBundleCtx or raddyCtxInit).
-  ## framebufferH: height of the RenderTexture being rendered into, in pixels.
-  ##              Pass RenderTexture.texture.height (inside BeginTextureMode).
-  ##              NK_COMMAND_SCISSOR applies a Y-flip (y' = framebufferH - y - h)
-  ##              because raylib FBOs use bottom-up OpenGL coordinates. Direct-to-
-  ##              screen rendering (GetScreenHeight()) does NOT need the flip and
-  ##              is not supported by this function — use a RenderTexture.
+  ## framebufferH: retained for API compatibility; no longer used for scissor flip.
+  ##              raylib's BeginScissorMode internally applies the FBO Y-flip
+  ##              (rlScissor(x, FboH-(y+h), w, h)) when CORE.Window.usingFbo is set,
+  ##              so Nuklear's Y-down coords must be forwarded UNCHANGED. An extra flip
+  ##              here would double-invert the scissor and push it off-screen.
   ## bufOverflow: set true if the Nuklear command buffer overflowed this frame
   ##              (vita/raddyFixed path only). Commands were dropped when true.
   ##              Text longer than RaddyMaxTextBytes (1024) per NK_COMMAND_TEXT is
@@ -108,7 +107,6 @@ proc raddyRender*(ctx: ptr nk_context; framebufferH: int32;
     raddyLog("raddyRender: ctx is nil — skipping frame")
     bufOverflow = false
     return
-  assert framebufferH > 0, "raddyRender: framebufferH must be > 0 (pass RenderTexture.texture.height)"
   var scissorActive = false
 
   var cmd = nkBegin(ctx)
@@ -122,10 +120,10 @@ proc raddyRender*(ctx: ptr nk_context; framebufferH: int32;
       let sc = cast[ptr nk_command_scissor](cmd)
       ## Replace semantics: close any active scissor before opening a new one.
       if scissorActive: rEndScissorMode()
-      let (sx, sy, sw, sh) = scissorYFlip(sc.x.int32, sc.y.int32,
-                                           sc.w.int32, sc.h.int32,
-                                           framebufferH)
-      rBeginScissorMode(sx, sy, sw, sh)
+      ## Forward Nuklear's Y-down coordinates directly. BeginScissorMode handles the
+      ## FBO Y-flip internally (rcore.c: rlScissor(x, FboH-(y+h), w, h)).
+      ## Do NOT pre-flip: double-flipping would push the scissor to the wrong region.
+      rBeginScissorMode(sc.x.int32, sc.y.int32, sc.w.int32, sc.h.int32)
       scissorActive = true
 
     of NK_COMMAND_LINE:
