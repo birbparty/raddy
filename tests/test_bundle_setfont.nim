@@ -8,11 +8,12 @@
 ## command queue and assert the emitted NK_COMMAND_TEXT carries the switched
 ## font's handle + height.
 ##
-## Path split mirrors tests/test_render.nim: command-CONTENT assertions run only
-## on the heap path (nk_init_default). On the fixed-buffer path (-d:raddyFixed /
-## vita) nk__begin/nk__next over a ref-embedded bundle buffer does not surface the
-## command content the same way (tracked separately in raddy-ac3), so the fixed
-## path gets a structural check (switch + emit does not crash and commits bytes).
+## Both paths now run the SAME command-CONTENT assertion. raddy-ac3 (fixed-buffer
+## bundle cmdBuf alignment) is fixed as of iteration 37, so nk__begin/nk__next over
+## a ref-embedded bundle buffer surfaces real commands on the fixed-buffer path
+## (-d:raddyFixed / vita) just like the heap path (nk_init_default). The fixed path
+## therefore asserts the switched font's handle + height in the emitted
+## NK_COMMAND_TEXT (a behavioral check), not merely that bytes were committed.
 ##
 ## HEADLESS: no real raylib / GL. The switched RaddyFont uses a nil RFont (the
 ## documented usable-but-non-rendering case — raddyMeasureWidth self-guards before
@@ -151,29 +152,44 @@ when not (defined(raddyFixed) or defined(vita)):
 
 when defined(raddyFixed) or defined(vita):
   ## Fixed-buffer path: command-content walking over a ref-embedded bundle buffer
-  ## is tracked separately (raddy-ac3). Here we assert the switch + emit path is
-  ## crash-free and commits command bytes into the bundle's fixed buffer.
-  spec "raddyBundleSetFont switches the active font (fixed path — structural)":
+  ## now works (raddy-ac3 fixed in iteration 37 — the inline cmdBuf is aligned for
+  ## nk_init_fixed, so nk__begin/nk__next surface real commands instead of a single
+  ## NOP). This branch therefore mirrors the heap-path BEHAVIORAL assertion: it
+  ## walks the command queue and proves the switched font's handle + height reached
+  ## the emitted NK_COMMAND_TEXT — i.e. the switch genuinely applied on the
+  ## fixed/vita path, not merely that bytes were committed.
+  spec "raddyBundleSetFont switches the active font (fixed path)":
 
-    it "switch + emit commits commands without overflow":
+    it "the emitted text command carries the switched handle + height":
+      # Base font (height 16) is the bundle default; we switch to a distinct 28 px
+      # font before emitting the only label, so the text command must carry the
+      # 28 px font — proving the wrapper changed ctx.style.font on the fixed path.
       var baseFont: RFont
       var bundle = raddyBundleCreate(addr baseFont, 16.0f)
       doAssert bundle.ctxOk, "bundle ctx init failed"
 
-      var rf = raddyMakeFont(nil, 28.0f)
+      # Switched font at a stable local address (single scope, never moved/copied).
+      var rf = raddyMakeFont(nil, 28.0f)   ## nil RFont: handle-only switch, headless
       switchAndEmit(bundle, rf)
 
-      let allocated = raddyBundleCtx(bundle).memory.allocated
+      var fonts: seq[ptr nk_user_font]
+      var heights: seq[float32]
+      let ctx = raddyBundleCtx(bundle)
+      var cmd = nkBegin(ctx)
+      while cmd != nil:
+        if cmd.`type` == NK_COMMAND_TEXT:
+          let tc = cast[ptr nk_command_text](cmd)
+          fonts.add(tc.font)
+          heights.add(tc.height)
+        cmd = nkNext(ctx, cmd)
+
+      # Capture overflow before the verify (bddy allows one verify block per it).
       var overflow = false
       raddyBundleClear(bundle, overflow)
       raddyBundleFree(bundle)
 
-      # NOTE: this proves only non-crash + that the frame committed command bytes.
-      # It does NOT prove the font switch applied — opening a window and emitting a
-      # label commits bytes even if raddyBundleSetFont were removed. Switch
-      # correctness on the fixed/vita path is gated on raddy-ac3 (the bundle-fixed
-      # command-content walk yields only a NOP); do not read green here as "switch
-      # verified on Vita".
       verify:
-        allocated > 0      ## the frame produced command bytes
-        not overflow       ## buffer did not overflow
+        not overflow                      ## fixed buffer did not overflow this frame
+        fonts.len == 1
+        fonts[0] == raddyFontHandle(rf)   ## the switched handle, not the bundle default
+        heights[0] == 28.0f32             ## the switched font's height, not the base 16
