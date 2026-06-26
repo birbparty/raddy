@@ -143,3 +143,59 @@ spec "RaddyMeasureSpacing constant":
   it "equals 2.0":
     verify:
       RaddyMeasureSpacing == 2.0f32
+
+# ---------------------------------------------------------------------------
+# RaddyFont / raddyMakeFont — caller-owned value type (no raylib calls needed)
+# ---------------------------------------------------------------------------
+
+spec "raddyMakeFont construction":
+  ## NOTE: these fixtures call raddyMakeFont(addr localFont, ...) on STACK locals.
+  ## That is test-only-safe because nothing escapes to C here (no setRaddyFont /
+  ## raddyRender). Do NOT read these as a usage example — real callers must pass a
+  ## STABLE address (a global or long-lived field), per RaddyFont's lifetime contract.
+
+  it "stores the provided fontPtr":
+    var font: RFont
+    let rf = raddyMakeFont(addr font, 20.0f32)
+    verify:
+      rf.fontPtr == addr font
+
+  it "stores the provided pixel size":
+    var font: RFont
+    let rf = raddyMakeFont(addr font, 32.0f32)
+    verify:
+      rf.pixelSize == 32.0f32
+
+  it "wires nkFont through raddyInitFont (userdata.ptr, height, width)":
+    var font: RFont
+    let rf = raddyMakeFont(addr font, 16.0f32)
+    verify:
+      rf.nkFont.userdata.`ptr` == cast[pointer](addr font) and
+      rf.nkFont.height == cfloat(16.0f32) and
+      rf.nkFont.width == raddyMeasureWidth
+
+  it "nil fontPtr still yields a usable font (self-guarding width callback)":
+    ## Mirrors raddyBundleCreate: the callback is always wired so layout cannot
+    ## hit a nil function pointer; text just will not render.
+    let rf = raddyMakeFont(nil, 24.0f32)
+    verify:
+      rf.fontPtr == nil and
+      rf.pixelSize == 24.0f32 and
+      rf.nkFont.width == raddyMeasureWidth
+
+  it "two fonts at different sizes are independent (the multi-size point)":
+    ## The actual reason RaddyFont exists: distinct fonts/sizes coexist.
+    var small, large: RFont
+    let rfSmall = raddyMakeFont(addr small, 16.0f32)
+    let rfLarge = raddyMakeFont(addr large, 32.0f32)
+    verify:
+      rfSmall.pixelSize == 16.0f32 and rfLarge.pixelSize == 32.0f32 and
+      rfSmall.nkFont.height == cfloat(16.0f32) and
+      rfLarge.nkFont.height == cfloat(32.0f32) and
+      rfSmall.fontPtr == (addr small) and rfLarge.fontPtr == (addr large) and
+      rfSmall.fontPtr != rfLarge.fontPtr
+
+  it "raddyFontHandle returns addr of the live nkFont field":
+    var rf = raddyMakeFont(nil, 16.0f32)
+    verify:
+      raddyFontHandle(rf) == addr rf.nkFont

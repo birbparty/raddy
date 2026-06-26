@@ -88,3 +88,68 @@ proc raddyInitFont*(nkFont: var nk_user_font; fontPtr: ptr RFont;
   nkFont.userdata.`ptr` = cast[pointer](fontPtr)
   nkFont.height = cfloat(fontPixelHeight)
   nkFont.width  = raddyMeasureWidth
+
+# ---------------------------------------------------------------------------
+# RaddyFont — caller-owned value type for multi-size / font-switching use
+# ---------------------------------------------------------------------------
+
+type RaddyFont* = object
+  ## A caller-owned font handle pairing a Nuklear nk_user_font with the pinned
+  ## RFont it measures and the pixel size it was built at. This is the value the
+  ## caller switches to via `setRaddyFont(ctx, addr myFont.nkFont)` to render at a
+  ## given size; build several (one per size) to support multi-size UIs.
+  ##
+  ## LIFETIME CONTRACT (two pointers escape into C, both caller-owned):
+  ##   1. `fontPtr` — Nuklear stores it in nkFont.userdata.ptr and the width
+  ##      callback dereferences it during text layout. The RFont it points at MUST
+  ##      outlive every frame this font is active. `fontPtr` must be a STABLE
+  ##      address (a module global or a long-lived field), never `addr` of a local
+  ##      or a seq element that may move.
+  ##   2. `addr self.nkFont` — `setRaddyFont`/`nk_style_set_font` does
+  ##      `style.font = &nkFont` with NO copy, and raddyRender dereferences that
+  ##      pointer during the command walk. So the RaddyFont VALUE itself must stay
+  ##      alive AT A STABLE ADDRESS from the moment it is set until AFTER
+  ##      raddyRender consumes that frame's command queue. Because RaddyFont is a
+  ##      value type, a copy/move relocates nkFont — store it once (global or
+  ##      long-lived field) and do not move it while it is the active font.
+  ##
+  ## Canonical usage (font + RaddyFont both at stable {.global.} addresses):
+  ##   var smallRf {.global.} = raddyMakeFont(addr smallFont, 16.0f)
+  ##   # per frame, inside nk_begin/nk_end:
+  ##   setRaddyFont(ctx, raddyFontHandle(smallRf))   ## then emit widgets
+  nkFont*:    nk_user_font  ## the Nuklear font handle (width callback + raw fontPtr)
+  fontPtr*:   ptr RFont     ## borrowed raw ptr to the caller-owned RFont (stable)
+  pixelSize*: float32       ## pixel height the font was built at (e.g., font.baseSize)
+
+proc raddyMakeFont*(fontPtr: ptr RFont; pixelSize: float32): RaddyFont
+    {.raises: [], gcsafe.} =
+  ## Build a RaddyFont from a pre-loaded, pinned RFont and its pixel size.
+  ##
+  ## fontPtr: stable address of a caller-owned RFont (see RaddyFont lifetime
+  ##   contract). The caller is responsible for verifying the font loaded
+  ##   successfully (e.g. font.texture.id != 0) before calling — font.nim has only
+  ##   a partial view of RFont and cannot inspect its texture field.
+  ## pixelSize: pixel height the font was loaded at; used as nk_user_font.height.
+  ##
+  ## A nil `fontPtr` still produces a usable RaddyFont: raddyInitFont wires the
+  ## self-guarding width callback (raddyMeasureWidth returns 0 for a nil handle),
+  ## so layout will not crash — text simply will not render. This mirrors
+  ## raddyBundleCreate's always-init-the-callback behaviour.
+  ##
+  ## Returns BY VALUE. Assign the result into stable storage before taking
+  ## `addr result.nkFont` (or calling raddyFontHandle) for setRaddyFont — a copy
+  ## relocates the nk_user_font.
+  result.fontPtr = fontPtr
+  result.pixelSize = pixelSize
+  raddyInitFont(result.nkFont, fontPtr, pixelSize)
+
+proc raddyFontHandle*(font: var RaddyFont): ptr nk_user_font {.inline, raises: [].} =
+  ## The single sanctioned way to obtain the `ptr nk_user_font` to pass to
+  ## `setRaddyFont`/`raddyBundleSetFont`. Centralizing `addr font.nkFont` here keeps
+  ## the lifetime-sensitive address-taking in one documented place.
+  ##
+  ## Takes `var RaddyFont` so the argument must be a mutable, addressable location
+  ## — which nudges callers toward stable storage (a global or long-lived field)
+  ## rather than a temporary. The returned pointer is only valid while `font` lives
+  ## at this address and is not moved/copied (see RaddyFont's lifetime contract).
+  addr font.nkFont
