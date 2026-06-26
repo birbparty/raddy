@@ -6,6 +6,9 @@ htmldocs/
 tests/test_*
 !tests/test_*.nim
 !tests/test_*.nims
+# Acceptance spec binary (real-raylib target, `nimble acceptance`) — keep source
+tests/acceptance_*
+!tests/acceptance_*.nim
 examples/*
 !examples/*.nim
 
