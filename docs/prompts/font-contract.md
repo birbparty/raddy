@@ -41,12 +41,11 @@ raddy):
   asset root).
 - Desktop: a path relative to the working directory (or absolute).
 
-> The bundled **test** font is sourced separately in raddy-8an.3 (still open):
-> once it lands, its exact path/license will be recorded in
-> `tests/assets/LICENSE.txt` (that file/dir do not exist yet), and the
-> acceptance spec will resolve it at compile time (see
-> `acceptance-test-model.md`). raddy itself bundles no font — `examples/demo.nim`
-> uses `getFontDefault()`.
+> The bundled **test** font is `tests/assets/unscii-16.ttf` (CC0/public-domain
+> Unscii; provenance + license in `tests/assets/LICENSE.txt`), added in
+> raddy-8an.3. The acceptance spec resolves it at compile time (see
+> `acceptance-test-model.md`). raddy's own library bundles no font — and
+> `examples/demo.nim` uses `getFontDefault()`; the TTF is a test asset only.
 
 ## Wrapping a Font: `RaddyFont`
 
