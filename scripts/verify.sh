@@ -131,6 +131,42 @@ gcc -std=c99 -fsyntax-only -w \
 echo "    vita C surface check: OK"
 # Symbol presence/naming on the real vita console (arm-vita-eabi-gcc) is in raddy-tzc.
 
+echo "==> verify: vita switch-path compile gate (raddy-8an.11) — codegen + gcc + symbol scan"
+# Beyond check_vita (types only): force CODEGEN of the font-switch path under
+# -d:vita --mm:arc (setRaddyFont / RaddyFont / raddyMakeFont / raddyBundleSetFont /
+# raddyFontLoaded), syntax-check the emitted C against the stubs, and confirm no
+# host-game symbols leak in. Full arm-vita-eabi link is intentionally NOT done:
+# nim.cfg documents this library produces no runnable Vita binary, and the
+# fn-ptr workaround flag (raddy-u7d) is unknown to arm-vita-eabi-gcc.
+VITA_SWITCH_CACHE=/tmp/raddy_vita_switch_check
+nim c --compileOnly --mm:arc --hints:off --path:src -d:vita \
+  --os:linux --cpu:amd64 \
+  --nimcache:"$VITA_SWITCH_CACHE" \
+  tests/stubs/verify_vita_switch.nim
+NIMLIB_SW=$(grep -oE '\-I(/[^"]+/lib)' "$VITA_SWITCH_CACHE/verify_vita_switch.json" | head -1 | sed 's/-I//')
+# raddyInitFont's nk_text_width_f assignment trips Apple clang's default-error
+# -Wincompatible-function-pointer-types; demote it exactly as nim.cfg does on osx
+# (the macOS-only spelling — Linux gcc neither needs nor knows it). See raddy-u7d.
+SW_FNPTR_FLAG=""
+[[ "$(uname)" == "Darwin" ]] && SW_FNPTR_FLAG="-Wno-error=incompatible-function-pointer-types"
+gcc -std=c99 -fsyntax-only -w ${SW_FNPTR_FLAG} \
+  -Itests/stubs \
+  -I"$NIMLIB_SW" \
+  -Isrc/raddy/vendor \
+  -include src/raddy/vendor/nk_config.h \
+  -D__vita__ \
+  "$VITA_SWITCH_CACHE/@mverify_vita_switch.nim.c" \
+  "$VITA_SWITCH_CACHE/@praddy@sbackend@sctx_bundle.nim.c" \
+  "$VITA_SWITCH_CACHE/@praddy@sbackend@sfont.nim.c" \
+  "$VITA_SWITCH_CACHE/@praddy@scontext.nim.c"
+# Host-game symbol scan: NONE of these tokens may appear in the emitted Vita C.
+if grep -iEl 'atty|health|server|inventory' "$VITA_SWITCH_CACHE"/*.c >/dev/null 2>&1; then
+  echo "  ERROR: forbidden host-game symbol found in generated Vita switch C:" >&2
+  grep -iEl 'atty|health|server|inventory' "$VITA_SWITCH_CACHE"/*.c >&2
+  exit 1
+fi
+echo "    vita switch-path compile gate: OK (codegen + syntax + clean symbol scan)"
+
 echo "==> verify: nuklear.h SHA256 matches VENDORED.md"
 EXPECTED_SHA=$(grep 'SHA256 of `nuklear.h`' src/raddy/vendor/VENDORED.md | grep -oE '[0-9a-f]{64}')
 ACTUAL_SHA=$(sha256sum src/raddy/vendor/nuklear.h | awk '{print $1}')
