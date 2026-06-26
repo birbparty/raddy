@@ -40,6 +40,40 @@ proc nk_clear*(ctx: ptr nk_context) {.importc: "nk_clear", header: nkH.}
   ## Reset the command queue for the next frame.
   ## MUST be called AFTER raddyRender() drains the queue and BEFORE nk_input_begin().
 
+proc nk_style_set_font*(ctx: ptr nk_context; font: ptr nk_user_font)
+    {.importc: "nk_style_set_font", header: nkH.}
+  ## Core nuklear font switch. Always compiled (no default-allocator gate, unlike
+  ## nk_init_default), so it is desktop + Vita safe with no when-not-defined(vita).
+  ## Sets ctx.style.font directly and resets the font stack head (non-scoped).
+
+# ---------------------------------------------------------------------------
+# Font switching (core wrapper)
+# ---------------------------------------------------------------------------
+
+proc setRaddyFont*(ctx: ptr nk_context; font: ptr nk_user_font) {.raises: [].} =
+  ## Switch the active Nuklear font.
+  ##
+  ## Thin core wrapper over nk_style_set_font. Forward-only: the change affects
+  ## only widgets emitted AFTER this call. It is written to ctx.style and is NOT
+  ## scoped or stacked — nk_clear does not reset it, so the font PERSISTS across
+  ## frames until the next setRaddyFont (or a context re-init). A mid-frame switch
+  ## is fully supported (nuklear resets the current layout's min row height on
+  ## switch), so callers may change font multiple times within one nk_begin/nk_end.
+  ##
+  ## Lifetime: `font` is BORROWED, not retained or copied. Nuklear stores the raw
+  ## pointer and calls `font.width` every frame text is laid out until the font is
+  ## switched again, so `font` must outlive every frame in which it is active;
+  ## freeing or moving it while active is a use-after-free inside nuklear.
+  ##
+  ## A nil `font` (or nil `ctx`) is ignored — this proc returns early. This is a
+  ## guard the raw nk_style_set_font does NOT provide: it would store nil into
+  ## ctx.style.font, deferring a crash to the next text layout/measurement op that
+  ## dereferences `font.width`. Pass a live nk_user_font built via the backend.
+  ##
+  ## Decoupled-core safe: takes a raw ptr nk_user_font, imports no backend module.
+  if ctx == nil or font == nil: return
+  nk_style_set_font(ctx, font)
+
 # ---------------------------------------------------------------------------
 # Per-session sentinel flags (module-level, one per process; single-context assumption)
 # ---------------------------------------------------------------------------
