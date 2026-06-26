@@ -92,6 +92,16 @@ nim c --mm:orc --hints:off --path:src -d:raddyFixed \
   ${NAYLIB_PASSC} \
   -r tests/test_render.nim
 
+echo "==> verify: test_bundle_render with -d:raddyFixed (fixed-buffer bundle alignment regression — raddy-ac3)"
+# This is the ONLY path that exercised the bug: a fixed-buffer bundle rendered
+# nothing (or crashed) when its cmdBuf was under-aligned. nimble test runs this
+# file on the heap path (which always rendered), so the fixed-path regression is
+# guarded HERE.
+nim c --mm:orc --hints:off --path:src -d:raddyFixed \
+  --path:"$BDDY_DIR" \
+  ${NAYLIB_PASSC} \
+  -r tests/test_bundle_render.nim
+
 echo "==> verify: vita C surface check — generate + gcc -fsyntax-only against stub"
 # Two-step check: Nim generates C; host gcc validates the generated C against the stub.
 # Step 1: generate C for the vita render+font+geom surface.

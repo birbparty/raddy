@@ -31,6 +31,20 @@ import ./font      ## raddyInitFont, RaddyFont, raddyFontHandle
 # Bundle type
 # ---------------------------------------------------------------------------
 
+const RaddyCmdBufAlign* = 16
+  ## Byte alignment required for the fixed command buffer passed to nk_init_fixed.
+  ## nuklear stores pointers and aligned structs IN the buffer; an under-aligned
+  ## base makes raddyRender emit nothing or crash with an illegal access (8-byte
+  ## alignment is the proven minimum; 16 is used as a conservative, max_align-safe
+  ## margin). The inline cmdBuf below can be pushed off alignment by the preceding
+  ## bool fields, so raddyBundleCreate aligns the base pointer up before init.
+  ## See raddy-ac3.
+
+static:
+  ## Must be a power of two: the alignment math masks with (RaddyCmdBufAlign - 1).
+  doAssert (RaddyCmdBufAlign and (RaddyCmdBufAlign - 1)) == 0,
+    "RaddyCmdBufAlign must be a power of two"
+
 type RaddyCtxBundle* {.acyclic.} = ref object
   ## Long-lived container. Holds all Nuklear state that must outlive the context.
   ## Create with raddyBundleCreate; free with raddyBundleFree.
@@ -45,7 +59,10 @@ type RaddyCtxBundle* {.acyclic.} = ref object
   when defined(vita) or defined(raddyFixed):
     ## NOTE: embeds RaddyCmdBufBytes (default 64 KiB) inline per bundle heap block.
     ## Create one bundle per context, not one per frame.
-    cmdBuf*: array[RaddyCmdBufBytes, byte]
+    ## Over-allocated by RaddyCmdBufAlign-1 so an aligned, RaddyCmdBufBytes-sized
+    ## window always fits regardless of this field's offset within the heap block
+    ## (raddyBundleCreate passes the aligned sub-pointer to nk_init_fixed).
+    cmdBuf*: array[RaddyCmdBufBytes + RaddyCmdBufAlign - 1, byte]
 
 # ---------------------------------------------------------------------------
 # Initialise
@@ -81,8 +98,17 @@ proc raddyBundleCreate*(fontPtr: ptr RFont; fontPixelSize: float32): RaddyCtxBun
   raddyInitFont(bundle.nkFont, fontPtr, fontPixelSize)
 
   when defined(vita) or defined(raddyFixed):
+    # nk_init_fixed needs an aligned buffer base (raddy-ac3). The embedded cmdBuf
+    # may be misaligned by the preceding fields, so advance to the next aligned
+    # byte and pass a RaddyCmdBufBytes-sized window from there (the field is
+    # over-allocated by RaddyCmdBufAlign-1, so >= RaddyCmdBufBytes always remain).
+    # Nim's `uint` is pointer-width on every target (incl. 32-bit Vita ARM), so
+    # casting the address to uint for the mask arithmetic is lossless.
+    let rawAddr = cast[uint](addr bundle.cmdBuf[0])
+    let misalign = int(rawAddr and uint(RaddyCmdBufAlign - 1))   ## rawAddr mod align
+    let alignOff = (RaddyCmdBufAlign - misalign) and (RaddyCmdBufAlign - 1)  ## 0 when aligned
     let ok = raddyCtxInit(addr bundle.ctx, addr bundle.nkFont,
-                          addr bundle.cmdBuf[0], nk_size(RaddyCmdBufBytes))
+                          addr bundle.cmdBuf[alignOff], nk_size(RaddyCmdBufBytes))
   else:
     let ok = raddyCtxInit(addr bundle.ctx, addr bundle.nkFont)
 
