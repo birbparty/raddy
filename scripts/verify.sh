@@ -139,11 +139,18 @@ echo "==> verify: vita switch-path compile gate (raddy-8an.11) — codegen + gcc
 # nim.cfg documents this library produces no runnable Vita binary, and the
 # fn-ptr workaround flag (raddy-u7d) is unknown to arm-vita-eabi-gcc.
 VITA_SWITCH_CACHE=/tmp/raddy_vita_switch_check
+# Start from a clean cache so the symbol scan below can never see stale .c from a
+# prior run (the scan greps whatever .c are present in the dir).
+rm -rf "$VITA_SWITCH_CACHE"
 nim c --compileOnly --mm:arc --hints:off --path:src -d:vita \
   --os:linux --cpu:amd64 \
   --nimcache:"$VITA_SWITCH_CACHE" \
   tests/stubs/verify_vita_switch.nim
 NIMLIB_SW=$(grep -oE '\-I(/[^"]+/lib)' "$VITA_SWITCH_CACHE/verify_vita_switch.json" | head -1 | sed 's/-I//')
+if [[ -z "$NIMLIB_SW" ]]; then
+  echo "  ERROR: could not extract Nim stdlib include path from verify_vita_switch.json" >&2
+  exit 1
+fi
 # raddyInitFont's nk_text_width_f assignment trips Apple clang's default-error
 # -Wincompatible-function-pointer-types; demote it exactly as nim.cfg does on osx
 # (the macOS-only spelling — Linux gcc neither needs nor knows it). See raddy-u7d.
@@ -159,10 +166,16 @@ gcc -std=c99 -fsyntax-only -w ${SW_FNPTR_FLAG} \
   "$VITA_SWITCH_CACHE/@praddy@sbackend@sctx_bundle.nim.c" \
   "$VITA_SWITCH_CACHE/@praddy@sbackend@sfont.nim.c" \
   "$VITA_SWITCH_CACHE/@praddy@scontext.nim.c"
-# Host-game symbol scan: NONE of these tokens may appear in the emitted Vita C.
-if grep -iEl 'atty|health|server|inventory' "$VITA_SWITCH_CACHE"/*.c >/dev/null 2>&1; then
+# Host-game symbol scan: NONE of the topdown game's tokens may leak into raddy's
+# emitted Vita C. Scope to RADDY'S OWN files only (@praddy@s* / @mverify_*) — NOT
+# the Nim stdlib output, whose symbols (e.g. isatty -> 'atty', observer -> 'server')
+# would substring-match these tokens and break CI spuriously. Case-sensitive: a
+# real leak appears as a Nim-mangled identifier preserving the original lower-case
+# (e.g. health__topdown_uN), which a substring match still catches.
+SW_RADDY_C=("$VITA_SWITCH_CACHE"/@praddy@s*.nim.c "$VITA_SWITCH_CACHE"/@mverify_*.nim.c)
+if grep -El 'atty|health|server|inventory' "${SW_RADDY_C[@]}" >/dev/null 2>&1; then
   echo "  ERROR: forbidden host-game symbol found in generated Vita switch C:" >&2
-  grep -iEl 'atty|health|server|inventory' "$VITA_SWITCH_CACHE"/*.c >&2
+  grep -El 'atty|health|server|inventory' "${SW_RADDY_C[@]}" >&2
   exit 1
 fi
 echo "    vita switch-path compile gate: OK (codegen + syntax + clean symbol scan)"
