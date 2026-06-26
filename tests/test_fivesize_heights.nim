@@ -7,7 +7,7 @@
 ## entries carry the five DISTINCT heights.
 ##
 ## This is the renderer-relevant field: render.nim reads cmd.height at
-## NK_COMMAND_TEXT (cf. docs/command-matrix.md), and nk_command_text.height is set
+## NK_COMMAND_TEXT (cf. docs/command-coverage.md), and nk_command_text.height is set
 ## by Nuklear to the active style font's height at emit time. So distinct command
 ## heights from one queue == the font switch genuinely took effect per group.
 ##
@@ -17,12 +17,9 @@
 ## reaching MeasureTextEx), so the queue still receives text commands carrying the
 ## font heights. Runs under the normal stubbed `nimble test`.
 
-import std/algorithm             ## sort
 import bddy
 import raddy                      ## ctx lifecycle, layout, widgets, setRaddyFont, types
 import raddy/backend/font         ## RaddyFont, raddyMakeFont, raddyFontHandle
-
-{.warning[UnusedImport]: off.}
 
 const nkH = "nuklear.h"
 
@@ -48,10 +45,10 @@ Vector2 MeasureTextEx(Font font, const char *text, float fontSize, float spacing
 # ---------------------------------------------------------------------------
 
 proc nkBegin(ctx: ptr nk_context): ptr nk_command
-    {.importc: "nk__begin", header: nkH.}
+    {.importc: "nk__begin", header: nkH, sideEffect.}
 
 proc nkNext(ctx: ptr nk_context; cmd: ptr nk_command): ptr nk_command
-    {.importc: "nk__next", header: nkH.}
+    {.importc: "nk__next", header: nkH, sideEffect.}
 
 # ---------------------------------------------------------------------------
 # Fixture
@@ -67,8 +64,11 @@ spec "five-size font switch emits five distinct text-command heights":
   for i, sz in FontSizes:
     fonts[i] = raddyMakeFont(nil, sz)
 
-  # Distinct default-context font height (7 px) NOT in FontSizes — proves any
-  # stray non-label text (it should be none) would not collide with a size we test.
+  # Default-context font height (7 px) deliberately NOT in FontSizes. The first
+  # setRaddyFont below replaces it before any label is emitted, so it is a
+  # defensive sentinel: if some unexpected text were emitted BEFORE the first
+  # switch (there should be none), its 7 px height could not be mistaken for one
+  # of the five sizes under test.
   var buf:  array[RaddyCmdBufBytes, byte]
   var baseFont: nk_user_font
   baseFont.height = 7.0f32
@@ -86,12 +86,13 @@ spec "five-size font switch emits five distinct text-command heights":
   # NK_WINDOW_BORDER only — deliberately NO NK_WINDOW_TITLE so the panel emits no
   # title text command that would pollute the text-command set.
   let bounds = nk_rect(x: 0, y: 0, w: 400, h: 600)
-  if raddyBegin(ctx.addr, "fivesize", bounds, NK_WINDOW_BORDER.nk_flags):
-    for i, sz in FontSizes:
-      setRaddyFont(addr ctx, raddyFontHandle(fonts[i]))
-      # Generous row height so even the 32 px font is not clipped before emit.
-      raddyLayoutRowDynamic(addr ctx, height = 40, cols = 1)
-      raddyLabel(addr ctx, "size " & $int(sz))
+  let opened = raddyBegin(addr ctx, "fivesize", bounds, NK_WINDOW_BORDER.nk_flags)
+  doAssert opened, "raddyBegin must open the window for any text command to emit"
+  for i, sz in FontSizes:
+    setRaddyFont(addr ctx, raddyFontHandle(fonts[i]))
+    # Generous row height so even the 32 px font is not clipped before emit.
+    raddyLayoutRowDynamic(addr ctx, height = 40, cols = 1)
+    raddyLabel(addr ctx, "size " & $int(sz))
   raddyEnd(addr ctx)
 
   # ---- walk the command queue, collect NK_COMMAND_TEXT heights ----
@@ -103,37 +104,39 @@ spec "five-size font switch emits five distinct text-command heights":
       textHeights.add(tc.height)
     cmd = nkNext(addr ctx, cmd)
 
+  # Exactly one text command per font group — guards against a missing emit
+  # (empty queue) or a stray text command (e.g. an accidental window title)
+  # before the stronger ordered checks below run.
   it "emitted exactly five text commands (one per font group)":
     verify:
       textHeights.len == 5
 
-  it "the five text-command heights are the five switched font sizes":
-    var sorted = textHeights
-    sorted.sort()
+  # The STRONGEST claim: heights appear in the SAME order the fonts were switched
+  # (8 → 10 → 16 → 20 → 32). Nuklear's command buffer is append-only in widget
+  # build order, so comparing the unsorted sequence proves each switch bound to
+  # the label that followed it — an off-by-one or scrambled switch that preserved
+  # the multiset would still fail here. This also subsumes the length, set, and
+  # distinctness properties of the emitted heights.
+  it "each text-command height equals the font active when its label emitted (in order)":
     verify:
-      sorted == @[8.0f32, 10.0f32, 16.0f32, 20.0f32, 32.0f32]
+      textHeights == @[8.0f32, 10.0f32, 16.0f32, 20.0f32, 32.0f32]
 
-  it "the five text-command heights are all distinct":
-    var seen: seq[float32]
-    var allDistinct = true
-    for h in textHeights:
-      if h in seen: allDistinct = false
-      seen.add(h)
-    verify:
-      allDistinct and seen.len == 5
-
-  # Each command's height equals its font handle's height (cmd.height == font.height),
-  # which is the contract render.nim relies on at NK_COMMAND_TEXT.
-  it "every text-command height matches a built font's height":
-    var allMatch = true
-    for h in textHeights:
-      var found = false
-      for f in fonts:
-        if f.nkFont.height == h: found = true
-      if not found: allMatch = false
+  # Tie the emitted heights back to the actual switched fonts (not just the
+  # literals): textHeights[i] must equal the i-th built font's height. This is
+  # the cmd.height == font.height contract render.nim relies on at NK_COMMAND_TEXT.
+  it "each text-command height matches its built font positionally":
+    var allMatch = textHeights.len == fonts.len
+    for i in 0 ..< min(textHeights.len, fonts.len):
+      if textHeights[i] != fonts[i].nkFont.height: allMatch = false
     verify:
       allMatch
 
+  # Per-frame reset must report no dropped commands. Meaningful only on the
+  # fixed-buffer path (heap path always reports false); mirrors test_smoke_headless.nim.
   var overflow = false
   raddyCtxClear(addr ctx, overflow)
+  when defined(raddyFixed) or defined(vita):
+    it "raddyCtxClear reported no buffer overflow":
+      verify:
+        not overflow
   raddyCtxFree(addr ctx)
