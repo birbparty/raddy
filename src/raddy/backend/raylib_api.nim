@@ -8,10 +8,10 @@
 ## The host game's build (naylib on desktop, vita console SDK on Vita) provides
 ## raylib.h on the C include path.
 ##
-## NOTE on rlRectangle: naylib's raylib.h renames Rectangle→rlRectangle to avoid
-## the Win32 DrawText/RECT namespace collision. RRect is bound to rlRectangle here.
-## The vita console port may use the original Rectangle name — verify in raddy-5ce
-## and guard with `when defined(vita): {.importc: "Rectangle".}` if needed.
+## NOTE on rlRectangle / rlDrawTextEx: naylib's raylib.h renames Rectangle→rlRectangle
+## and DrawTextEx→rlDrawTextEx to avoid Win32 DrawText/RECT namespace collisions.
+## The vita console SDK uses the original C names (Rectangle, DrawTextEx); the guards
+## below select the correct importc name per platform.
 ##
 ## Decoupled-core exception: backend/ is allowed to reference platform types.
 ## All other src/raddy/ modules MUST NOT import this file. Additionally, do not
@@ -37,9 +37,15 @@ type
   RVec2* {.importc: "Vector2", header: raylibH, completeStruct.} = object
     x*, y*: float32
 
-  RRect* {.importc: "rlRectangle", header: raylibH, completeStruct.} = object
+# RRect: naylib renames Rectangle→rlRectangle; Vita SDK uses Rectangle.
+when defined(vita) or defined(psp):
+  type RRect* {.importc: "Rectangle", header: raylibH, completeStruct.} = object
+    x*, y*, width*, height*: float32
+else:
+  type RRect* {.importc: "rlRectangle", header: raylibH, completeStruct.} = object
     x*, y*, width*, height*: float32
 
+type
   RFont* {.importc: "Font", header: raylibH.} = object
     ## PARTIAL VIEW. rlDrawTextEx receives Font by value (C ABI: stack copy).
     ## Nuklear stores only a pointer to the underlying font data — raddy's
@@ -147,10 +153,14 @@ else:
 # Text and texture
 # ---------------------------------------------------------------------------
 
-proc rDrawTextEx*(font: RFont; text: cstring; pos: RVec2; fontSize, spacing: float32; color: RColor)
-    {.importc: "rlDrawTextEx", header: raylibH, sideEffect.}
-  ## C name is rlDrawTextEx (naylib's raylib renames DrawTextEx to avoid Win32 collision).
-  ## Vita console port may use DrawTextEx — verify in raddy-5ce.
+# rDrawTextEx: naylib renames DrawTextEx→rlDrawTextEx; Vita SDK uses DrawTextEx.
+when defined(vita) or defined(psp):
+  proc rDrawTextEx*(font: RFont; text: cstring; pos: RVec2; fontSize, spacing: float32; color: RColor)
+      {.importc: "DrawTextEx", header: raylibH, sideEffect.}
+else:
+  proc rDrawTextEx*(font: RFont; text: cstring; pos: RVec2; fontSize, spacing: float32; color: RColor)
+      {.importc: "rlDrawTextEx", header: raylibH, sideEffect.}
+  ## C name is rlDrawTextEx (naylib renames DrawTextEx to avoid Win32 RECT/DrawText collision).
 
 proc rDrawTextureRec*(tex: RTexture; src: RRect; pos: RVec2; tint: RColor)
     {.importc: "DrawTextureRec", header: raylibH, sideEffect.}
