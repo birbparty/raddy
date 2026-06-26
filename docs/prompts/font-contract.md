@@ -19,11 +19,17 @@ multi-size UI, bake **each size as its own `Font`** — one `loadFont` per ppem.
 Do NOT load one atlas and scale it; scaling a bitmap atlas blurs glyphs.
 
 ```nim
-# One distinct Font per pixel size you intend to render at.
-var small = loadFont(fontPath, 16, 0)   # 16 px atlas
-var large = loadFont(fontPath, 32, 0)   # 32 px atlas
-setTextureFilter(small.texture, TextureFilter.Point)  # pixel-clean at small sizes
-setTextureFilter(large.texture, TextureFilter.Point)
+# Module scope: each Font must outlive every frame it is active, at a STABLE
+# address (its pointer escapes into Nuklear — see the lifetime contract below).
+var small, large: Font
+
+proc loadFonts() =            # call ONCE, AFTER initWindow (baking needs a GL context)
+  # One distinct Font per pixel size; the `0` glyphCount = raylib's default ASCII
+  # set (95 glyphs), NOT an empty atlas.
+  small = loadFont(fontPath, 16, 0)   # 16 px atlas
+  large = loadFont(fontPath, 32, 0)   # 32 px atlas
+  setTextureFilter(small.texture, TextureFilter.Point)  # pixel-clean at small sizes
+  setTextureFilter(large.texture, TextureFilter.Point)
 ```
 
 A single-size app simply bakes one `Font` — the multi-size machinery is additive
@@ -35,10 +41,12 @@ raddy):
   asset root).
 - Desktop: a path relative to the working directory (or absolute).
 
-> The bundled **test** font and its exact path/license are sourced separately in
-> raddy-8an.3 (recorded in `tests/assets/LICENSE.txt`); the acceptance spec
-> resolves it at compile time (see `acceptance-test-model.md`). raddy itself
-> bundles no font — `examples/demo.nim` uses `getFontDefault()`.
+> The bundled **test** font is sourced separately in raddy-8an.3 (still open):
+> once it lands, its exact path/license will be recorded in
+> `tests/assets/LICENSE.txt` (that file/dir do not exist yet), and the
+> acceptance spec will resolve it at compile time (see
+> `acceptance-test-model.md`). raddy itself bundles no font — `examples/demo.nim`
+> uses `getFontDefault()`.
 
 ## Wrapping a Font: `RaddyFont`
 
@@ -46,13 +54,22 @@ Each loaded `Font` is paired with a Nuklear `nk_user_font` via the caller-owned
 `RaddyFont` value (`src/raddy/backend/font.nim`):
 
 ```nim
-var smallRf {.global.} = raddyMakeFont(addr small, 16.0f)  # ppem MUST match the bake size
-var largeRf {.global.} = raddyMakeFont(addr large, 32.0f)
+# Module scope too — the RaddyFont VALUE must also live at a stable address.
+var smallRf, largeRf: RaddyFont
+
+proc wrapFonts() =            # call after loadFonts()
+  # `RFont` is a distinct Nim type aliasing raylib's `Font` (same C struct), so
+  # the `ptr Font` must be bridged with `cast[ptr RFont]` (see examples/demo.nim).
+  # Pass the bake ppem; using `small.baseSize` keeps height == bake size by
+  # construction rather than as a remembered invariant.
+  smallRf = raddyMakeFont(cast[ptr RFont](addr small), float32(small.baseSize))  # 16
+  largeRf = raddyMakeFont(cast[ptr RFont](addr large), float32(large.baseSize))  # 32
 ```
 
 `raddyMakeFont(fontPtr, pixelSize)` wires `nk_user_font.height = pixelSize` and
 `nk_user_font.width = raddyMeasureWidth`, and stores `fontPtr` in
-`userdata.ptr`. Build one `RaddyFont` per size.
+`userdata.ptr`. Build one `RaddyFont` per size. `pixelSize` MUST equal the ppem
+the font was baked at, or that font's measure and draw sizes diverge.
 
 ### Lifetime — two pointers escape into C, both caller-owned
 
@@ -75,16 +92,24 @@ Switch the active font between command groups inside a single `nk_begin`/
 ```nim
 if raddyBegin(ctx, "panel", bounds, flags):
   setRaddyFont(ctx, raddyFontHandle(smallRf))   # everything emitted next uses 16 px
+  raddyLayoutRowDynamic(ctx, height = 20, cols = 1)
   raddyLabel(ctx, "small text")
-  setRaddyFont(ctx, raddyFontHandle(largeRf))   # switch — forward-only
+  setRaddyFont(ctx, raddyFontHandle(largeRf))   # switch — forward-only, re-bases row height
+  raddyLayoutRowDynamic(ctx, height = 40, cols = 1)
   raddyLabel(ctx, "BIG text")
-  raddyEnd(ctx)
+raddyEnd(ctx)   # call EVERY frame, even when raddyBegin returned false (widgets.nim)
 ```
 
-For a `RaddyCtxBundle`, the additive wrapper `raddyBundleSetFont(bundle, rf)`
-does the same against the bundle's context.
+`raddyEnd` is outside the `if`: it must run once per `raddyBegin` regardless of
+the return value, or Nuklear's window stack is left unbalanced. Widgets are
+emitted only when `raddyBegin` returned true.
 
-### Switch semantics (grounded in `nk_style_set_font`, nuklear.h:19379)
+For a `RaddyCtxBundle`, the additive wrapper `raddyBundleSetFont(bundle, rf)`
+does the same against the bundle's context. To revert to the bundle's built-in
+font (the one wired at `raddyBundleCreate`), switch back to its stable inline
+handle: `setRaddyFont(raddyBundleCtx(bundle), addr bundle.nkFont)`.
+
+### Switch semantics (grounded in `nk_style_set_font`, nuklear.h:19380)
 
 `nk_style_set_font` (which `setRaddyFont` wraps) does exactly three things:
 - sets `ctx->style.font = font` directly;
@@ -99,7 +124,9 @@ Consequences callers must rely on:
   within the same `nk_begin`/`nk_end` and in subsequent frames.
 - **Persists across frames.** `nk_clear` (per-frame queue reset) does **not**
   touch `ctx.style.font`. A font set in frame 1 is still active in frame 2 with
-  no re-switch; re-init the context to fully reset.
+  no re-switch; re-init the context to fully reset. Corollary: if you want a
+  deterministic *starting* font each frame (rather than inheriting whatever the
+  previous frame left active), re-set it at the top of every frame.
 - **Mid-frame switching is supported** — change font as many times as needed
   within one frame; each switch resets the current layout's min row height.
 - **Borrowed, never retained.** `setRaddyFont` ignores a nil `font`/`ctx`
