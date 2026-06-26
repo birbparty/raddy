@@ -149,6 +149,10 @@ spec "RaddyMeasureSpacing constant":
 # ---------------------------------------------------------------------------
 
 spec "raddyMakeFont construction":
+  ## NOTE: these fixtures call raddyMakeFont(addr localFont, ...) on STACK locals.
+  ## That is test-only-safe because nothing escapes to C here (no setRaddyFont /
+  ## raddyRender). Do NOT read these as a usage example — real callers must pass a
+  ## STABLE address (a global or long-lived field), per RaddyFont's lifetime contract.
 
   it "stores the provided fontPtr":
     var font: RFont
@@ -178,3 +182,20 @@ spec "raddyMakeFont construction":
       rf.fontPtr == nil and
       rf.pixelSize == 24.0f32 and
       rf.nkFont.width == raddyMeasureWidth
+
+  it "two fonts at different sizes are independent (the multi-size point)":
+    ## The actual reason RaddyFont exists: distinct fonts/sizes coexist.
+    var small, large: RFont
+    let rfSmall = raddyMakeFont(addr small, 16.0f32)
+    let rfLarge = raddyMakeFont(addr large, 32.0f32)
+    verify:
+      rfSmall.pixelSize == 16.0f32 and rfLarge.pixelSize == 32.0f32 and
+      rfSmall.nkFont.height == cfloat(16.0f32) and
+      rfLarge.nkFont.height == cfloat(32.0f32) and
+      rfSmall.fontPtr == (addr small) and rfLarge.fontPtr == (addr large) and
+      rfSmall.fontPtr != rfLarge.fontPtr
+
+  it "raddyFontHandle returns addr of the live nkFont field":
+    var rf = raddyMakeFont(nil, 16.0f32)
+    verify:
+      raddyFontHandle(rf) == addr rf.nkFont
