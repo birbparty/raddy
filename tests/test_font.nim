@@ -143,3 +143,38 @@ spec "RaddyMeasureSpacing constant":
   it "equals 2.0":
     verify:
       RaddyMeasureSpacing == 2.0f32
+
+# ---------------------------------------------------------------------------
+# RaddyFont / raddyMakeFont — caller-owned value type (no raylib calls needed)
+# ---------------------------------------------------------------------------
+
+spec "raddyMakeFont construction":
+
+  it "stores the provided fontPtr":
+    var font: RFont
+    let rf = raddyMakeFont(addr font, 20.0f32)
+    verify:
+      rf.fontPtr == addr font
+
+  it "stores the provided pixel size":
+    var font: RFont
+    let rf = raddyMakeFont(addr font, 32.0f32)
+    verify:
+      rf.pixelSize == 32.0f32
+
+  it "wires nkFont through raddyInitFont (userdata.ptr, height, width)":
+    var font: RFont
+    let rf = raddyMakeFont(addr font, 16.0f32)
+    verify:
+      rf.nkFont.userdata.`ptr` == cast[pointer](addr font) and
+      rf.nkFont.height == cfloat(16.0f32) and
+      rf.nkFont.width == raddyMeasureWidth
+
+  it "nil fontPtr still yields a usable font (self-guarding width callback)":
+    ## Mirrors raddyBundleCreate: the callback is always wired so layout cannot
+    ## hit a nil function pointer; text just will not render.
+    let rf = raddyMakeFont(nil, 24.0f32)
+    verify:
+      rf.fontPtr == nil and
+      rf.pixelSize == 24.0f32 and
+      rf.nkFont.width == raddyMeasureWidth
