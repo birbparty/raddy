@@ -74,6 +74,57 @@ proc main() =
 main()
 ```
 
+## Multi-size fonts and font switching
+
+raddy renders at multiple font sizes in one UI by switching the active Nuklear
+font between widget groups. Bake **one `Font` per pixel size** (do not scale a
+single atlas — it blurs), wrap each in a caller-owned `RaddyFont`, and switch
+with `setRaddyFont` (handle form) or `raddyBundleSetFont` (bundle form — see
+below):
+
+```nim
+import raddy
+import raddy/backend/font        # RaddyFont, raddyMakeFont, raddyFontHandle
+import raddy/backend/raylib_api  # RFont
+
+# Module scope — each Font and its RaddyFont must outlive every frame it is
+# active, at a STABLE address (both pointers escape into Nuklear).
+var small, large: Font
+var smallRf, largeRf: RaddyFont
+
+proc loadFonts() =               # call after initWindow (baking needs a GL context)
+  small = loadFont("my.ttf", 16, 0)
+  large = loadFont("my.ttf", 32, 0)
+  # RFont is raddy's separate Nim view of raylib's Font (same C struct, distinct
+  # Nim identity) — bridge the ptr with cast[ptr RFont]. Pass the bake ppem
+  # (baseSize) as the pixel height: it MUST equal the size the font was baked at,
+  # or measure and draw diverge and text clips/overflows.
+  smallRf = raddyMakeFont(cast[ptr RFont](addr small), float32(small.baseSize))
+  largeRf = raddyMakeFont(cast[ptr RFont](addr large), float32(large.baseSize))
+
+# Per frame, inside raddyBegin/raddyEnd. `ctx` is raddyBundleCtx(bundle) from the
+# Quickstart above.
+setRaddyFont(ctx, raddyFontHandle(smallRf))   # smallRf active; everything next is 16 px
+raddyLabel(ctx, "small")
+setRaddyFont(ctx, raddyFontHandle(largeRf))   # mid-frame switch is supported → 32 px
+raddyLabel(ctx, "BIG")
+```
+
+If you hold the bundle (not a raw `ctx`), the bundle form switches the same way
+but takes the `RaddyFont` **value** rather than a handle:
+
+```nim
+raddyBundleSetFont(bundle, largeRf)   # equivalent to setRaddyFont(raddyBundleCtx(bundle), raddyFontHandle(largeRf))
+```
+
+The switch is **forward-only** (affects only widgets emitted after it) and
+**persists across frames** (the per-frame clear, `nk_clear`, does not reset it —
+re-set each frame if you want a deterministic starting font). A single-size app
+just bakes one font; the machinery is additive. See
+[docs/prompts/font-contract.md](docs/prompts/font-contract.md) for the full
+lifetime contract (the fonts and `RaddyFont`s must stay at a stable address —
+no frame-loop locals, no reallocating `seq` storage — until after `raddyRender`).
+
 ## Building
 
 Do **not** use `nimble build` — the `srcDir` flatten causes import path issues. Compile directly:
@@ -86,6 +137,29 @@ nim c \
   --passC:"-I$(nimble path naylib)/raylib" \
   examples/demo.nim
 ```
+
+## Testing
+
+```sh
+nimble test         # unit/spec suite — stubs raylib, no GL context required
+nimble acceptance   # real-raylib acceptance spec — needs a GL/window context
+```
+
+`nimble test` links a **stubbed** raylib (no window, no GPU) and runs every
+`tests/test_*.nim`. The `acceptance` task is **separate**: it links **real**
+raylib (naylib) and opens a hidden window to exercise the font pipeline against
+the real `LoadFont`/`MeasureTextEx` — it runs `tests/acceptance_smoke.nim`
+(deliberately named without `test_` so the stubbed suite never picks it up). On
+a headless CI host, wrap it with a virtual framebuffer:
+`xvfb-run -a nimble acceptance`.
+
+### Bundled test font
+
+`tests/assets/unscii-16.ttf` is the bundled acceptance-test font —
+[Unscii](http://viznut.fi/unscii/) 16, public domain / CC-0. It is a **test
+asset only**: raddy's library bundles no font, and consumers supply their own.
+Provenance and the CC-0 terms (and the GPL carve-out that this non-`full`
+variant avoids) are recorded in `tests/assets/LICENSE.txt`.
 
 ## Architecture: Command-queue rendering (not vertex)
 
@@ -134,3 +208,5 @@ See [docs/command-coverage.md](docs/command-coverage.md) for the full dispatch m
 ## License
 
 raddy is MIT licensed. Nuklear is vendored from https://github.com/Immediate-Mode-UI/Nuklear under the Unlicense (public domain). See `src/raddy/vendor/nuklear.h` for the full license.
+
+The bundled test font `tests/assets/unscii-16.ttf` is [Unscii](http://viznut.fi/unscii/) — public domain / CC-0 (the non-`full` variant; the GPL `unscii-full`/Unifont-derived files are deliberately not vendored). See `tests/assets/LICENSE.txt`.
