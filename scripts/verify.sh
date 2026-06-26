@@ -102,6 +102,15 @@ nim c --mm:orc --hints:off --path:src -d:raddyFixed \
   ${NAYLIB_PASSC} \
   -r tests/test_bundle_render.nim
 
+echo "==> verify: test_bundle_setfont with -d:raddyFixed (fixed-path font-switch content walk — raddy-0hw)"
+# nimble test runs this file on the heap path; the fixed-path content walk (now
+# unblocked by the raddy-ac3 alignment fix) is guarded HERE, mirroring the
+# test_bundle_render fixed-path regression above.
+nim c --mm:orc --hints:off --path:src -d:raddyFixed \
+  --path:"$BDDY_DIR" \
+  ${NAYLIB_PASSC} \
+  -r tests/test_bundle_setfont.nim
+
 echo "==> verify: vita C surface check — generate + gcc -fsyntax-only against stub"
 # Two-step check: Nim generates C; host gcc validates the generated C against the stub.
 # Step 1: generate C for the vita render+font+geom surface.
