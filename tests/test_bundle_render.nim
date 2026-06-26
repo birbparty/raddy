@@ -59,8 +59,10 @@ spec "raddyBundleCreate context renders (raddy-ac3 alignment regression)":
   it "raddyRender dispatches draw calls for a bundle frame (window + label)":
     dbgReset()
 
-    # A non-nil, "loaded" font so the label's text command also draws (texture.id
-    # != 0 satisfies render.nim's text path; the width callback is stubbed).
+    # A non-nil font so the label's text command draws. render.nim's text path
+    # gates only on the font's userdata RFont ptr being non-nil and length > 0
+    # (render.nim:352) — NOT on texture.id. texture.id = 1 here is load-bearing
+    # solely for the bundle.fontLoaded doAssert below; the width callback is stubbed.
     var baseFont: RFont
     baseFont.texture.id = 1'u32
     var bundle = raddyBundleCreate(addr baseFont, 16.0f)

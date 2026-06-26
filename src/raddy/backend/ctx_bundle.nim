@@ -40,6 +40,11 @@ const RaddyCmdBufAlign* = 16
   ## bool fields, so raddyBundleCreate aligns the base pointer up before init.
   ## See raddy-ac3.
 
+static:
+  ## Must be a power of two: the alignment math masks with (RaddyCmdBufAlign - 1).
+  doAssert (RaddyCmdBufAlign and (RaddyCmdBufAlign - 1)) == 0,
+    "RaddyCmdBufAlign must be a power of two"
+
 type RaddyCtxBundle* {.acyclic.} = ref object
   ## Long-lived container. Holds all Nuklear state that must outlive the context.
   ## Create with raddyBundleCreate; free with raddyBundleFree.
@@ -97,6 +102,8 @@ proc raddyBundleCreate*(fontPtr: ptr RFont; fontPixelSize: float32): RaddyCtxBun
     # may be misaligned by the preceding fields, so advance to the next aligned
     # byte and pass a RaddyCmdBufBytes-sized window from there (the field is
     # over-allocated by RaddyCmdBufAlign-1, so >= RaddyCmdBufBytes always remain).
+    # Nim's `uint` is pointer-width on every target (incl. 32-bit Vita ARM), so
+    # casting the address to uint for the mask arithmetic is lossless.
     let rawAddr = cast[uint](addr bundle.cmdBuf[0])
     let misalign = int(rawAddr and uint(RaddyCmdBufAlign - 1))   ## rawAddr mod align
     let alignOff = (RaddyCmdBufAlign - misalign) and (RaddyCmdBufAlign - 1)  ## 0 when aligned
