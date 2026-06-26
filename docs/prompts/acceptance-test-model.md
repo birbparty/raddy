@@ -67,10 +67,10 @@ Notes:
 - `--mm:orc` matches the desktop demo build (`examples/demo.nim`) and is also
   set by the repo-root `nim.cfg` (which `nim c` inherits by walking up the
   tree). The task passes it explicitly to mirror the existing `test` task; it is
-  not lost if the flag list changes. The same `nim.cfg` supplies the macOS
-  `-Wno-error=incompatible-function-pointer-types` flag that raddy's font/filter
-  callbacks need to build under Apple clang (tracked separately in raddy-u7d), so
-  the acceptance task does **not** need to repeat it.
+  not lost if the flag list changes. (raddy's font/filter callbacks build clean
+  under Apple clang with no fn-ptr-compat flag — their proc types emit
+  const-qualified C pointers matching Nuklear's typedefs as of raddy-u7d; the
+  old `-Wno-error=incompatible-function-pointer-types` workaround is gone.)
 - naylib/bddy versions are discovered, not pinned. The versions observed at the
   time of writing were `naylib-26.08.0` and `bddy-0.1.0` (under
   `~/.nimble/pkgs2/`) — recorded only as a sanity reference; do not hardcode

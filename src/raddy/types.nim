@@ -83,6 +83,9 @@ type
   ## so no `-Wno-error=incompatible-function-pointer-types` flag is needed (and
   ## downstream consumers who C-compile src/ under Apple clang build clean too).
   ## Aliased to `cstring`, so Nim-level use (nil-check, copyMem) is unchanged.
+  ## Intended for the const-char callback PARAMETER position only — the importc
+  ## spelling substitutes textually, so derived forms (e.g. `ptr cstringConst`,
+  ## arrays) would emit surprising types; use a purpose-built type for those.
   cstringConst* {.importc: "const char*", nodecl.} = cstring
 
   ## Width callback: (userdata, font_height, text_ptr, text_byte_len) -> pixel width
