@@ -81,8 +81,8 @@ proc raddyInitFont*(nkFont: var nk_user_font; fontPtr: ptr RFont;
   ##
   ## fontPtr must point to a pinned RFont with lifetime >= the nk_context.
   ## The caller is responsible for verifying the font loaded successfully
-  ## (e.g., font.texture.id != 0) before calling this proc — font.nim has
-  ## only a partial view of RFont and cannot access its texture field.
+  ## (use raddyFontLoaded(fontPtr) from raylib_api.nim) before calling this proc;
+  ## font.nim deliberately stays agnostic of Font's texture layout.
   ##
   ## fontPixelHeight: pixel size the font was loaded at (e.g., font.baseSize).
   nkFont.userdata.`ptr` = cast[pointer](fontPtr)
@@ -127,8 +127,8 @@ proc raddyMakeFont*(fontPtr: ptr RFont; pixelSize: float32): RaddyFont
   ##
   ## fontPtr: stable address of a caller-owned RFont (see RaddyFont lifetime
   ##   contract). The caller is responsible for verifying the font loaded
-  ##   successfully (e.g. font.texture.id != 0) before calling — font.nim has only
-  ##   a partial view of RFont and cannot inspect its texture field.
+  ##   successfully (use raddyFontLoaded(fontPtr) from raylib_api.nim) before
+  ##   calling — font.nim deliberately stays agnostic of Font's texture layout.
   ## pixelSize: pixel height the font was loaded at; used as nk_user_font.height.
   ##
   ## A nil `fontPtr` still produces a usable RaddyFont: raddyInitFont wires the

@@ -72,8 +72,13 @@ proc raddyFontLoaded*(fontPtr: ptr RFont): bool {.inline, raises: [].} =
   ## but its texture.id stays 0 and no glyph renders. So a non-nil fontPtr is NOT
   ## sufficient to know text will draw — callers must also check this signal.
   ##
-  ## Lives here (not in font.nim) because backend/font.nim holds only a fieldless
-  ## partial RFont view and cannot read texture.id; raylib_api.nim owns the field.
+  ## Lives here, the module that OWNS RFont/RTexture, so the only field-level
+  ## dependency on the partial Font layout stays in one place. font.nim imports
+  ## RFont but deliberately stays agnostic of its texture layout and delegates
+  ## load-detection to this helper.
+  ##
+  ## Assumes LoadFont* leaves texture.id == 0 on bake failure (raylib contract);
+  ## Vita console-port runtime zero-on-failure to be confirmed on-device (raddy-5ce).
   ##
   ## nil fontPtr => false (nothing loaded). Never raises, never dereferences nil.
   if fontPtr == nil: return false
