@@ -44,6 +44,8 @@ task acceptance, "Run the real-raylib acceptance spec (needs a GL context)":
   let bddyDirs = bddyRaw.strip().splitLines()
   if bddyCode != 0 or bddyDirs.len == 0 or bddyDirs[0].len == 0:
     quit "raddy acceptance: bddy not found — run: nimble install bddy"
+  if bddyDirs.len > 1:
+    echo "raddy acceptance: WARNING multiple bddy-* dirs, using " & bddyDirs[0]
   let bddyDir = bddyDirs[0]
   # naylib (REAL raylib) — required for the real LoadFont/MeasureTextEx + window.
   let (naylibRaw, naylibCode) = gorgeEx(
@@ -51,6 +53,8 @@ task acceptance, "Run the real-raylib acceptance spec (needs a GL context)":
   let naylibDirs = naylibRaw.strip().splitLines()
   if naylibCode != 0 or naylibDirs.len == 0 or naylibDirs[0].len == 0:
     quit "raddy acceptance: naylib not found — run: nimble install naylib"
+  if naylibDirs.len > 1:
+    echo "raddy acceptance: WARNING multiple naylib-* dirs, using " & naylibDirs[0]
   let naylibDir = naylibDirs[0]
   let flags = "--mm:orc --hints:off --path:src" &
               " --path:" & bddyDir &
@@ -60,9 +64,17 @@ task acceptance, "Run the real-raylib acceptance spec (needs a GL context)":
 ```
 
 Notes:
-- `--mm:orc` matches the desktop demo build (`examples/demo.nim`).
-- naylib here is `naylib-26.08.0` at `~/.nimble/pkgs2/naylib-*`; `bddy-0.1.0` at
-  `~/.nimble/pkgs2/bddy-*`. Discovery (not a pinned path) keeps it portable.
+- `--mm:orc` matches the desktop demo build (`examples/demo.nim`) and is also
+  set by the repo-root `nim.cfg` (which `nim c` inherits by walking up the
+  tree). The task passes it explicitly to mirror the existing `test` task; it is
+  not lost if the flag list changes. The same `nim.cfg` supplies the macOS
+  `-Wno-error=incompatible-function-pointer-types` flag that raddy's font/filter
+  callbacks need to build under Apple clang (tracked separately in raddy-u7d), so
+  the acceptance task does **not** need to repeat it.
+- naylib/bddy versions are discovered, not pinned. The versions observed at the
+  time of writing were `naylib-26.08.0` and `bddy-0.1.0` (under
+  `~/.nimble/pkgs2/`) — recorded only as a sanity reference; do not hardcode
+  them. The `find` discovery keeps the task portable across version bumps.
 - naylib links the raylib C library itself once its module is imported; no
   extra `--passL` is required on the dev host (macOS).
 
@@ -87,12 +99,81 @@ Grounded naylib symbols (naylib `raylib.nim`):
   `LoadFont` per ppem (do **not** scale one atlas)
 - `closeWindow()`
 
-`tests/config.nims` currently only adds `$projectDir/../src` to the path. For
-the acceptance spec, resolve `tests/assets/` from the spec file using
-`currentSourcePath()` parent + `/assets/` (compile-time path), so the bundled
-TTF (raddy-8an.3) loads regardless of CWD. Do **not** use
-`getScreenWidth/Height` for the framebuffer dims — they return 0 on the Vita
-binding; pass explicit dimensions to `raddyRender`.
+### Resolving the bundled TTF — and a note on `config.nims`
+
+bead raddy-8an.8 literally says "ensure `tests/config.nims` also resolves
+`tests/assets/`". **That wording is superseded by this decision:** `config.nims`
+adds a Nim **module search path** (`$projectDir/../src`), which governs `import`
+resolution, not runtime file lookup — it cannot make `loadFont` find an asset.
+Leave `config.nims` unchanged. Instead the spec resolves `tests/assets/` at
+compile time from its own location, so the font loads regardless of CWD:
+
+```nim
+import std/os
+const assetsDir = currentSourcePath().parentDir / "assets"
+# e.g. loadFont(assetsDir / <fontFile>, ppem, 0)
+```
+
+The `.8` implementer should follow this doc, not the bead's `config.nims`
+sentence.
+
+### Framebuffer dimensions and render target
+
+`raddyRender(ctx, framebufferH: int32, bufOverflow: var bool)` takes the
+framebuffer height **explicitly** (`src/raddy/backend/render.nim:87`). Its own
+contract states direct-to-screen rendering is **not supported** — scissor
+commands apply a Y-flip for raylib's bottom-up FBO origin — so the acceptance
+frame MUST render into a `RenderTexture` inside `beginTextureMode`, passing
+`rt.texture.height` as `framebufferH` (mirror `examples/demo.nim:174-188`).
+Do not call `getScreenWidth/Height`; pass explicit dimensions. (As a secondary
+aside, those globals also read 0 on the Vita binding, but the binding reason
+above is the one that holds on desktop.)
+
+For the minimal smoke frame (one text + one filled rect + one rect outline, no
+clipped region) no `NK_COMMAND_SCISSOR` is emitted, so `framebufferH` only acts
+as a guard value there — but use a `RenderTexture` anyway to stay within the
+supported path.
+
+### Stable addresses (carried over from raddy-8an.9)
+
+Each `RaddyFont` value and the `Font` it borrows must stay live at a **stable
+address** from `setRaddyFont`/`raddyBundleSetFont` until **after** the
+`raddyRender` call consumes that frame — the raw pointer is stored in
+`nk_handle`/`ctx.style.font` with no copy (see the lifetime contract in
+`src/raddy/backend/font.nim`). Hold each font in a module-level/`{.global.}`
+var; never `addr` a local or a movable seq element.
+
+## 2b. Bundled TTF + what the spec asserts
+
+### The font asset (depends on raddy-8an.3)
+
+The spec loads a bundled CC0/OFL TTF from `tests/assets/`. That asset does
+**not exist yet** — it is delivered by **raddy-8an.3**, which also records the
+exact filename + license in `tests/assets/LICENSE.txt`. raddy-8an.9 already
+`DEPENDS ON` raddy-8an.3, so the spec cannot be written verbatim until .3
+lands. Use the filename .3 records (referenced here as `<fontFile>`); do **not**
+invent one, and do **not** reference topdown's `assets/fonts/match7.ttf`.
+
+### Assertions (raddy-8an.9)
+
+Build ONE frame and assert, per the bead:
+
+- **Two distinct sizes.** Load the TTF at TWO distinct ppem via **separate**
+  `loadFont(assetsDir / <fontFile>, ppem, 0)` calls (one atlas per ppem, never
+  one atlas scaled). Pick two ppems that raddy-8an.3 actually bakes (its
+  candidate set is 8/10/16/20/32 px) — e.g. **16 and 32**. Switch the active
+  font between groups via `setRaddyFont` / `raddyBundleSetFont`.
+- **Geometry.** Emit text + a filled rect + a rect outline, then call
+  `raddyRender(ctx, rt.texture.height, bufOverflow)` (inside `beginTextureMode`,
+  per the render-target note above).
+- **Width parity, ≤1px per line.** For a known multi-glyph string, assert
+  `raddyMeasureWidth` (raddy's Nuklear width callback) matches raylib's
+  `MeasureTextEx(font, str, ppem, spacing)` within **≤1px for each line**
+  measured. The spacing argument MUST be the shared constant
+  `RaddyMeasureSpacing` (`src/raddy/backend/font.nim:23`, value `2.0`) — import
+  and reference it; do **not** re-type the `2.0` literal, or measure/draw will
+  silently diverge. Compare line-by-line for multi-line strings (Nuklear
+  measures per line, not the whole block).
 
 ## 3. TEST FILE NAME
 
@@ -113,15 +194,19 @@ available:
    `initWindow` + hidden window get a usable GL context.
 2. **No GL context obtainable** (`isWindowReady()` is false, or `initWindow`
    aborts): the spec MUST NOT report a green/skipped pass. Flag the acceptance
-   bead for human / on-device execution:
+   bead for human / on-device execution by adding the `human` label (this is
+   what `bd human list` surfaces — `bd human` itself only has the subcommands
+   `list`/`respond`/`dismiss`/`stats`, NOT a bare-id form):
 
    ```
-   bd human raddy-8an.9
+   bd update raddy-8an.9 --add-label human
+   bd human list            # confirm it now appears as human-needed
    ```
 
    A headless **SKIP is explicitly NOT a pass.** Under the Ralph loop, if
    raddy-8an.9 cannot obtain a GL context, do not merge a skipped or stubbed
-   pass — flag via `bd human` and halt that bead for human/on-device sign-off.
+   pass — flag via the `human` label (above) and halt that bead for
+   human/on-device sign-off.
 
    The dev host here is macOS, where `FLAG_WINDOW_HIDDEN` + `initWindow`
    yields a real hidden GL window, so the local run is expected to execute the
