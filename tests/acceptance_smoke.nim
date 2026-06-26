@@ -52,9 +52,12 @@ var
 # --- RALPH GATE: real GL/window context -------------------------------------
 setConfigFlags(flags(WindowHidden))          ## FLAG_WINDOW_HIDDEN — set BEFORE initWindow
 initWindow(FbW, FbH, "raddy acceptance")
-doAssert isWindowReady(),
-  "no GL context — acceptance spec cannot run headlessly. Flag raddy-8an.9 " &
-  "for human/on-device (bd update raddy-8an.9 --add-label human). SKIP is NOT a pass."
+# Explicit `quit` (NOT doAssert): the RALPH gate must hold in EVERY build mode,
+# including -d:danger where doAssert is elided. A missing GL context is a hard
+# FAILURE (exit 1), never a skipped or quiet pass.
+if not isWindowReady():
+  quit("no GL context — acceptance spec cannot run headlessly. Flag raddy-8an.9 " &
+       "for human/on-device (bd update raddy-8an.9 --add-label human). SKIP is NOT a pass.", 1)
 
 # Two distinct sizes, one bake per ppem (NOT one atlas scaled). `0` glyphCount =
 # raylib's default ASCII set (95 glyphs). RFont is a distinct Nim type aliasing
@@ -87,14 +90,23 @@ spec "raddy acceptance (real raylib, hidden GL window)":
       font32.baseSize == 32
 
   it "raddyMeasureWidth matches raylib MeasureTextEx within <=1px at 16 px":
-    let delta = abs(widthRaddy(rf16, Sample, 16.0f) - widthRaylib(font16, Sample, 16.0f))
+    # Parity (path check: same C MeasureTextEx via the callback) AND an absolute
+    # expected width, so a CORRELATED error (both sides wrong together, or a
+    # spacing/cell-metric drift) is also caught. Sample is 16 glyphs; unscii-16
+    # is an 8 px cell at 16 ppem → 16*8 + 15*2(spacing) = 158 px (measured).
+    let rw = widthRaddy(rf16, Sample, 16.0f)
+    let yw = widthRaylib(font16, Sample, 16.0f)
     verify:
-      delta <= 1.0f
+      abs(rw - yw) <= 1.0f
+      abs(rw - 158.0f) <= 1.0f
 
   it "raddyMeasureWidth matches raylib MeasureTextEx within <=1px at 32 px":
-    let delta = abs(widthRaddy(rf32, Sample, 32.0f) - widthRaylib(font32, Sample, 32.0f))
+    # 16 px cell at 32 ppem → 16*16 + 15*2(spacing, NOT scaled) = 286 px (measured).
+    let rw = widthRaddy(rf32, Sample, 32.0f)
+    let yw = widthRaylib(font32, Sample, 32.0f)
     verify:
-      delta <= 1.0f
+      abs(rw - yw) <= 1.0f
+      abs(rw - 286.0f) <= 1.0f
 
   it "one frame: text + filled rect + rect outline + font switch renders, no overflow":
     let bundle = raddyBundleCreate(cast[ptr RFont](addr font16), float32(font16.baseSize))
@@ -106,8 +118,9 @@ spec "raddy acceptance (real raylib, hidden GL window)":
 
     # NK_WINDOW_BORDER emits a rect OUTLINE; raddyButton emits a filled rect; the
     # labels emit text. The active font is switched between the two groups.
-    let flags = NK_WINDOW_BORDER.nk_flags or NK_WINDOW_TITLE.nk_flags
-    if raddyBegin(ctx, "acceptance", nk_rect(x: 10, y: 10, w: 280, h: 200), flags):
+    # (winFlags, not `flags`, to avoid shadowing naylib's `flags` proc.)
+    let winFlags = NK_WINDOW_BORDER.nk_flags or NK_WINDOW_TITLE.nk_flags
+    if raddyBegin(ctx, "acceptance", nk_rect(x: 10, y: 10, w: 280, h: 200), winFlags):
       setRaddyFont(ctx, raddyFontHandle(rf16))            ## 16 px group
       raddyLayoutRowDynamic(ctx, height = 20, cols = 1)
       raddyLabel(ctx, "small text")                       ## TEXT
@@ -118,6 +131,12 @@ spec "raddy acceptance (real raylib, hidden GL window)":
       raddyLabel(ctx, "BIG")                              ## TEXT at 32 px
     raddyEnd(ctx)                                         ## every frame, regardless of return
 
+    # The built frame must have emitted Nuklear draw commands (text + rects).
+    # Capture BEFORE render/free; this is the observable effect — `not overflow`
+    # alone is constant-false on the desktop heap path (overflow is gated behind
+    # vita/raddyFixed in render.nim), so it cannot fail here.
+    let allocated = raddyBundleCtx(bundle).memory.allocated
+
     # raddyRender requires a RenderTexture target (its scissor Y-flip assumes an
     # FBO origin; direct-to-screen is unsupported). Pass explicit framebuffer
     # height — NEVER getScreenHeight (0 on the Vita binding).
@@ -126,10 +145,14 @@ spec "raddy acceptance (real raylib, hidden GL window)":
     var overflow = false
     raddyRender(ctx, rt.texture.height, overflow)
     endTextureMode()
+    let rtId = rt.texture.id     ## GPU target actually created
+    # rt is unloaded by ORC =destroy at the end of this `it` (RenderTexture has a destructor).
 
     raddyBundleFree(bundle)
     verify:
-      not overflow              ## heap path: always false; asserts the contract holds
+      allocated > 0             ## the frame emitted draw commands (observable effect)
+      rtId != 0                 ## the RenderTexture target was created on the GPU
+      not overflow              ## contract holds (heap path keeps it false)
 
   it "raddyMeasureWidth is monotonic in ppem (32 px wider than 16 px)":
     verify:

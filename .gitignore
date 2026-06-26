@@ -9,6 +9,7 @@ tests/test_*
 # Acceptance spec binary (real-raylib target, `nimble acceptance`) — keep source
 tests/acceptance_*
 !tests/acceptance_*.nim
+!tests/acceptance_*.nims
 examples/*
 !examples/*.nim
 
