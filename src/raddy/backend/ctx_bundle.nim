@@ -114,8 +114,9 @@ proc raddyBundleSetFont*(bundle: RaddyCtxBundle; font: var RaddyFont) {.inline, 
   ## The bundle's inline nkFont stays the default/initial font wired at
   ## raddyBundleCreate; this does NOT replace it or store `font` in the bundle.
   ## Forward-only, exactly like setRaddyFont: it affects only widgets emitted AFTER
-  ## the call within the same nk_begin/nk_end pass, and persists across frames until
-  ## the next switch (nk_clear does not reset ctx.style.font).
+  ## the call. It is written to the GLOBAL ctx.style.font, so it also carries to
+  ## later windows in the same frame and persists across frames until the next
+  ## switch (nk_clear does not reset ctx.style.font).
   ##
   ## LIFETIME: `font` is taken as `var RaddyFont` — NOT by value — on purpose.
   ## raddyFontHandle returns `addr font.nkFont`, which Nuklear stores and then

@@ -107,6 +107,48 @@ when not (defined(raddyFixed) or defined(vita)):
       raddyBundleClear(bundle, overflow)
       raddyBundleFree(bundle)
 
+    it "the switched font persists into the next frame without re-switching":
+      # nk_clear does not reset ctx.style.font, so a font switched in frame 1 must
+      # still be active in frame 2 with no second raddyBundleSetFont call. Locks in
+      # the persist-across-frames contract documented on raddyBundleSetFont.
+      var baseFont: RFont
+      var bundle = raddyBundleCreate(addr baseFont, 16.0f)
+      doAssert bundle.ctxOk, "bundle ctx init failed"
+      var rf = raddyMakeFont(nil, 28.0f)
+      let ctx = raddyBundleCtx(bundle)
+
+      # Frame 1: switch + emit, then per-frame clear.
+      switchAndEmit(bundle, rf)
+      var overflow = false
+      raddyBundleClear(bundle, overflow)
+
+      # Frame 2: emit WITHOUT re-switching — font must still be rf (28 px).
+      raddyInputBegin(ctx)
+      raddyInputEnd(ctx)
+      doAssert raddyBegin(ctx, "persist", nk_rect(x: 0, y: 0, w: 300, h: 200),
+                          NK_WINDOW_BORDER.nk_flags), "raddyBegin must open the window"
+      raddyLayoutRowDynamic(ctx, height = 40, cols = 1)
+      raddyLabel(ctx, "still switched")
+      raddyEnd(ctx)
+
+      var fonts: seq[ptr nk_user_font]
+      var heights: seq[float32]
+      var cmd = nkBegin(ctx)
+      while cmd != nil:
+        if cmd.`type` == NK_COMMAND_TEXT:
+          let tc = cast[ptr nk_command_text](cmd)
+          fonts.add(tc.font)
+          heights.add(tc.height)
+        cmd = nkNext(ctx, cmd)
+
+      raddyBundleClear(bundle, overflow)
+      raddyBundleFree(bundle)
+
+      verify:
+        fonts.len == 1
+        fonts[0] == raddyFontHandle(rf)   ## still the frame-1 switched font
+        heights[0] == 28.0f32             ## persisted, not reset to the 16 px default
+
 when defined(raddyFixed) or defined(vita):
   ## Fixed-buffer path: command-content walking over a ref-embedded bundle buffer
   ## is tracked separately (raddy-ac3). Here we assert the switch + emit path is
@@ -126,6 +168,12 @@ when defined(raddyFixed) or defined(vita):
       raddyBundleClear(bundle, overflow)
       raddyBundleFree(bundle)
 
+      # NOTE: this proves only non-crash + that the frame committed command bytes.
+      # It does NOT prove the font switch applied — opening a window and emitting a
+      # label commits bytes even if raddyBundleSetFont were removed. Switch
+      # correctness on the fixed/vita path is gated on raddy-ac3 (the bundle-fixed
+      # command-content walk yields only a NOP); do not read green here as "switch
+      # verified on Vita".
       verify:
         allocated > 0      ## the frame produced command bytes
         not overflow       ## buffer did not overflow
